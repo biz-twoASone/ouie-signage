@@ -1,6 +1,6 @@
 # Smart TV Signage — project notes
 
-**Status (as of 2026-04-21):** **Plan 1 complete.** All 27 tasks committed; 23/23 Deno integration tests pass; pgtap (schema + constraints + RLS isolation) PASS. Local E2E green. Next: write Plan 2 (Next.js dashboard) via `superpowers:writing-plans` — but only when the user says go. Pre-Plan-2 there are two loose ends worth deciding first: (a) deploy Plan 1 artifacts to the remote Supabase project (see Post-Plan checks at the bottom of the plan file), and (b) the `.env.local` env-pointing quirk noted below.
+**Status (as of 2026-04-21):** **Plan 1 complete.** All 27 tasks committed; 23/23 Deno integration tests pass; pgtap (schema + constraints + RLS isolation) PASS. Local E2E green. Next: write Plan 2 (Next.js dashboard) via `superpowers:writing-plans` — but only when the user says go. Pre-Plan-2 loose end: deploy Plan 1 artifacts to the remote Supabase project (see Post-Plan checks at the bottom of the plan file).
 
 ## Do not re-brainstorm
 
@@ -34,7 +34,8 @@ Before doing anything in this project:
 - **No placeholders, no TODOs.** If you catch yourself about to write `// TODO: implement later`, stop and either finish it or escalate to the user.
 - **TDD for non-trivial Edge Functions.** Migration tasks are not TDD (the schema SQL is itself the spec); Edge Function tasks write Deno tests first, implement, run tests, commit.
 - **Edge runtime does not hot-reload.** After editing any `supabase/functions/**/*.ts` file while `supabase functions serve` is already running, the container serves the old code until restarted. Run `docker restart supabase_edge_runtime_smart-tv-video-viewer` (or kill + re-run `supabase functions serve --env-file .env.local`) before re-running Deno tests — otherwise a "fix" appears not to take effect.
-- **`.env.local` env pointing quirk.** As of end-of-Plan-1, `.env.local` points at a remote Supabase project (not `127.0.0.1:54321`), and the remote has no migrations applied. Tests therefore need env overrides to run green against local: recover local demo keys via `supabase status -o env`, then prefix `deno test` commands with `SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<local> SUPABASE_SERVICE_ROLE_KEY=<local>`. Not fixed yet — worth a decision: either point `.env.local` at local, or introduce a separate `.env.test` / `.env.production` split. Pending user call.
+- **Test runner.** Run the full Deno integration suite via `deno task test` (defined in root `deno.json`). The task passes `--env-file=.env.local` so you don't need to source env manually. If you add a test that pulls env vars directly, they'll come from `.env.local` too.
+- **`.env.local` values — quote them.** `.env.local` is loaded both by `supabase functions serve --env-file .env.local` (edge runtime) and by `deno test --env-file=.env.local` (test process). When editing values, wrap in double quotes: `KEY="value"`. Unquoted JWTs containing `-` characters get truncated by bash when sourced (service-role key ending in `...yH-qQwv...` was silently truncated at `yH-` in an earlier edit).
 - **PostgREST schema cache staleness.** After `supabase db reset`, PostgREST can still serve the old schema cache; `NOTIFY pgrst, 'reload schema'` alone isn't always enough. Fix: `docker restart supabase_rest_smart-tv-video-viewer`. Same pattern as the edge runtime restart.
 
 ## Stack summary (one-liner for fresh Claude)

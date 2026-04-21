@@ -1,0 +1,5 @@
+{
+  "tasks": {
+    "test": "deno test --env-file=.env.local --allow-net --allow-env supabase/functions/tests/"
+  }
+}
