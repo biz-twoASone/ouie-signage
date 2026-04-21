@@ -2820,14 +2820,14 @@ These are small enough to bundle with the Task 23 items. The sweep will touch 23
 Device reports per-media cache state (after sync window). Stored as a `cache_events` table (new) for a running log, plus a denormalized summary in `devices.cache_storage_info`.
 
 **Files:**
-- Create: `supabase/migrations/20260421001400_cache_events.sql`
+- Create: `supabase/migrations/20260421001500_cache_events.sql`
 - Create: `supabase/functions/devices-cache-status/index.ts`
 - Create: `supabase/functions/tests/cache_status.test.ts`
 
 - [ ] **Step 1: Migration for `cache_events`**
 
 ```sql
--- supabase/migrations/20260421001400_cache_events.sql
+-- supabase/migrations/20260421001500_cache_events.sql
 CREATE TABLE cache_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -2915,7 +2915,7 @@ Deno.serve(async (req) => {
 ```bash
 supabase functions serve --env-file .env.local
 deno test --allow-net --allow-env supabase/functions/tests/cache_status.test.ts
-git add supabase/migrations/20260421001400_cache_events.sql supabase/functions/devices-cache-status supabase/functions/tests/cache_status.test.ts
+git add supabase/migrations/20260421001500_cache_events.sql supabase/functions/devices-cache-status supabase/functions/tests/cache_status.test.ts
 git commit -m "feat(fn): devices-cache-status + cache_events log"
 ```
 
