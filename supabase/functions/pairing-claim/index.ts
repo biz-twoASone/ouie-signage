@@ -98,16 +98,15 @@ Deno.serve(async (req) => {
     })
     .eq("code", code);
   if (linkErr) {
-    // Best-effort cleanup: delete the just-inserted device row and release the claim
-    // so the original TV can retry. Log any cleanup failures — this is the only
-    // path that surfaces them.
+    // Best-effort cleanup: delete the orphan device and release the claim so the
+    // user can retry. Failures here are logged; the caller will see a 500 either way.
     const { error: delErr } = await svc.from("devices").delete().eq("id", device.id);
-    if (delErr) console.error("pairing-claim cleanup: device delete failed", delErr);
+    if (delErr) console.error("pairing-claim cleanup: devices delete failed", { device_id: device.id, error: delErr.message });
     const { error: relErr } = await svc.from("pairing_requests")
       .update({ claimed_at: null })
       .eq("code", code)
       .is("claimed_device_id", null);
-    if (relErr) console.error("pairing-claim cleanup: claim release failed", relErr);
+    if (relErr) console.error("pairing-claim cleanup: claim release failed", { code, error: relErr.message });
     return new Response("db: " + linkErr.message, { status: 500 });
   }
 
