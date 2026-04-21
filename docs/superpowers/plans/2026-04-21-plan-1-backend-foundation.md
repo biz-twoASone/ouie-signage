@@ -2165,6 +2165,95 @@ git commit -m "feat(fn): pairing-status with one-time TV token pickup"
 
 ---
 
+## Task 21b: Harden pairing-claim final UPDATE + pairing-status JSONB safety
+
+**Why this exists:** Task 21 code review flagged two items that would otherwise be replicated as anti-patterns across the devices endpoint cluster (Tasks 22–26):
+
+1. **Important — Silent failure on the final `tv_pickup` UPDATE in pairing-claim.** The UPDATE that stashes tokens and links `claimed_device_id` has no error check. If it fails (transient DB issue), the dashboard still gets a 200 response with `{device_id, name}`, but pairing_requests has `claimed_at=set, claimed_device_id=null, tv_pickup=null`. The TV polls pairing-status, hits the `paired_pickup_consumed` branch with `device_id: null`, and can never authenticate. Permanent data-corruption path that the dashboard UI reports as success.
+2. **Minor — `...data.tv_pickup` spread trusts JSONB shape.** The spread happens AFTER the hardcoded `status` and `device_id` keys, so a malformed JSONB blob (future schema drift, bug in pairing-claim) could overwrite both. Today only pairing-claim writes tv_pickup and writes exactly `{access_token, refresh_token, expires_in}` — but the spread ordering is a footgun.
+
+**Explicitly NOT in this task:** the T21 I-1 pickup-drain race. Accepted as v1 residual risk given the threat model (small-scale Indonesian retail, TV in owner-controlled premises, physical access implies the ability to steal the TV directly). Document by adding a note to the spec but do not fix in code.
+
+**Files:**
+- Modify: `supabase/functions/pairing-claim/index.ts`
+- Modify: `supabase/functions/pairing-status/index.ts`
+
+- [ ] **Step 1: Error-check + roll back on final UPDATE failure in pairing-claim**
+
+In `supabase/functions/pairing-claim/index.ts`, replace the final link/stash UPDATE block (currently a fire-and-forget `await svc.from(...).update(...).eq(...)`) with an error-checked version that, on failure, attempts to clean up the device row and release the pairing claim so the user can retry:
+
+```ts
+  // Link claim → device AND stash the pickup bundle for the TV to drain via
+  // pairing-status. The dashboard never sees the raw tokens.
+  const { error: linkErr } = await svc.from("pairing_requests")
+    .update({
+      claimed_device_id: device.id,
+      tv_pickup: { access_token: accessToken, refresh_token: refresh, expires_in: ttl },
+    })
+    .eq("code", code);
+  if (linkErr) {
+    // Best-effort cleanup: delete the orphan device and release the claim so the
+    // user can retry. Failures here are logged; the caller will see a 500 either way.
+    const { error: delErr } = await svc.from("devices").delete().eq("id", device.id);
+    if (delErr) console.error("pairing-claim cleanup: devices delete failed", { device_id: device.id, error: delErr.message });
+    const { error: relErr } = await svc.from("pairing_requests")
+      .update({ claimed_at: null })
+      .eq("code", code)
+      .is("claimed_device_id", null);
+    if (relErr) console.error("pairing-claim cleanup: claim release failed", { code, error: relErr.message });
+    return new Response("db: " + linkErr.message, { status: 500 });
+  }
+
+  return Response.json({
+    device_id: device.id,
+    name: String(name).slice(0, 80),
+  });
+```
+
+Leave the rest of the handler (atomic CAS, device insert + its rollback, JWT mint) exactly as-is.
+
+- [ ] **Step 2: Destructure tv_pickup explicitly in pairing-status**
+
+In `supabase/functions/pairing-status/index.ts`, replace the spread-based paired response with explicit field copying, so future schema drift or stray JSONB content cannot overwrite `status` or `device_id`:
+
+```ts
+  // Paired. Drain the pickup bundle (one-time).
+  if (data.tv_pickup) {
+    await svc.from("pairing_requests").update({ tv_pickup: null }).eq("code", code);
+    const { access_token, refresh_token, expires_in } = data.tv_pickup;
+    return Response.json({
+      status: "paired",
+      device_id: data.claimed_device_id,
+      access_token,
+      refresh_token,
+      expires_in,
+    });
+  }
+```
+
+- [ ] **Step 3: Re-run the pairing tests end-to-end**
+
+```bash
+supabase functions serve --env-file .env.local &
+eval "$(supabase status -o env)" && \
+  export SUPABASE_URL=http://127.0.0.1:54321 \
+         SUPABASE_ANON_KEY="$ANON_KEY" \
+         SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" && \
+  deno test --allow-net --allow-env supabase/functions/tests/pairing_claim.test.ts && \
+  deno test --allow-net --allow-env supabase/functions/tests/pairing_status.test.ts
+```
+
+All 3 tests (1 pairing_claim + 2 pairing_status) must pass. The happy path exercises both modified flows; the error-path cleanup in Step 1 is not exercised by the existing tests (adding a negative test would be a later consolidated-test-pass item, not this task's scope).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add supabase/functions/pairing-claim/index.ts supabase/functions/pairing-status/index.ts
+git commit -m "fix(fn): error-check pairing-claim link UPDATE + explicit tv_pickup destructure"
+```
+
+---
+
 ## Task 22: Edge Function — `devices-refresh`
 
 Rotates the refresh token and issues a new access JWT. Implements theft detection.
