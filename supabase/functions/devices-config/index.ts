@@ -79,7 +79,9 @@ Deno.serve(async (req) => {
       id: dev.id,
       store_id: dev.store_id,
       fallback_playlist_id: dev.fallback_playlist_id,
-      timezone: (dev as { stores: { timezone: string } }).stores.timezone,
+      // PostgREST types `stores(timezone)` embed as `stores: {timezone: any}[]`
+      // (array form for to-one FK), so narrow via `unknown` to the runtime shape.
+      timezone: (dev as unknown as { stores: { timezone: string } }).stores.timezone,
     },
     rules: rules ?? [],
     playlists: (playlists ?? []).map((p) => ({
