@@ -80,11 +80,7 @@ Deno.serve(async (req) => {
     return new Response("db: " + devErr.message, { status: 500 });
   }
 
-  // Link claim → device (a second UPDATE because we claimed before knowing device.id):
-  await svc.from("pairing_requests")
-    .update({ claimed_device_id: device.id })
-    .eq("code", code);
-
+  // Mint device access JWT BEFORE the final update so we can stash it in tv_pickup:
   const ttl = 3600;
   const accessToken = await mintDeviceAccessToken({
     deviceId: device.id,
@@ -93,10 +89,17 @@ Deno.serve(async (req) => {
     secret: jwtSecret,
   });
 
+  // Link claim → device AND stash the pickup bundle for the TV to drain via
+  // pairing-status. The dashboard never sees the raw tokens.
+  await svc.from("pairing_requests")
+    .update({
+      claimed_device_id: device.id,
+      tv_pickup: { access_token: accessToken, refresh_token: refresh, expires_in: ttl },
+    })
+    .eq("code", code);
+
   return Response.json({
     device_id: device.id,
-    access_token: accessToken,
-    refresh_token: refresh,
-    expires_in: ttl,
+    name: String(name).slice(0, 80),
   });
 });

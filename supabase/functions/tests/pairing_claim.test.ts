@@ -49,8 +49,6 @@ Deno.test({
   assertEquals(r2.status, 200);
   const body = await r2.json();
   assert(body.device_id);
-  assert(body.access_token);
-  assert(body.refresh_token);
-  assert(body.expires_in > 0);
+  assert(body.name);
   },
 });
