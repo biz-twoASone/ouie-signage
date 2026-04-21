@@ -2423,6 +2423,132 @@ git commit -m "feat(fn): devices-refresh with rotation and theft detection; test
 
 ---
 
+## Task 22b: Harden devices-refresh — atomic CAS + loud DEVICE_JWT_SECRET + helper error-surfacing
+
+Post-review hardening. Three problems found in Task 22 review:
+
+1. **Critical — rotation is not atomic.** The `SELECT ... then UPDATE by id` pattern in `devices-refresh/index.ts` has a TOCTOU window. Two concurrent requests with the same old refresh token will both SELECT device D, compute different new hashes, and both UPDATE — only the second write survives. Both clients get a 200 with valid-looking tokens, but only one is live. The real theft case is not detected: two uses of the same old token both succeed. This is the same class of bug Task 20b fixed in `pairing-claim`.
+2. **Important — `DEVICE_JWT_SECRET` non-null-assertion is load-bearing.** `Deno.env.get("DEVICE_JWT_SECRET")!` passes `undefined` into `mintDeviceAccessToken` if unset, which throws inside djwt. But the DB rotation in Step 3 runs *before* the mint — so a misconfigured secret silently rotates the hash in the DB and then crashes, bricking the device. Must fail-fast above any DB write.
+3. **Important — `_helpers.ts` silently swallows Supabase errors.** `const { data } = ...` without error checks in five places. Downstream test failures (Tasks 23–27 will all import this helper) will report confusing symptoms instead of pointing at the real upstream failure.
+
+**Files modified:**
+- `supabase/functions/devices-refresh/index.ts`
+- `supabase/functions/tests/_helpers.ts`
+- `supabase/functions/tests/refresh.test.ts` — add a concurrent-rotation test that would fail without the CAS fix
+
+### Step 1: Loud DEVICE_JWT_SECRET check at function entry, above DB writes
+
+In `supabase/functions/devices-refresh/index.ts`, immediately after the `if (req.method !== "POST")` guard:
+
+```ts
+const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET");
+if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");
+```
+
+Then change the `mintDeviceAccessToken` call to use `secret: jwtSecret` (not `Deno.env.get("DEVICE_JWT_SECRET")!`).
+
+### Step 2: Atomic CAS on rotation
+
+Replace the UPDATE block so the new hash is only written if the stored hash still equals the one we looked up:
+
+```ts
+const { data: rotated, error: updErr } = await svc.from("devices").update({
+  refresh_token_hash: newHash,
+  refresh_token_last_used_at: now,
+  refresh_token_issued_at: now,
+}).eq("id", device.id)
+  .eq("refresh_token_hash", h)   // CAS guard — fails if another request rotated first
+  .select("id")
+  .maybeSingle();
+if (updErr) return new Response("db: " + updErr.message, { status: 500 });
+if (!rotated) return new Response("invalid refresh", { status: 401 });   // lost the race or stolen
+```
+
+This collapses the SELECT-then-UPDATE into one conditional UPDATE. A concurrent request that lost the race gets a 401 — which is the correct behavior: we cannot distinguish a legitimate client retry from a theft, and 401 forces re-pair rather than silently orphaning a device.
+
+### Step 3: Error-surface `_helpers.ts`
+
+Add an `unwrap` helper and wrap every Supabase call + fetch response:
+
+```ts
+function unwrap<T>(r: { data: T | null; error: unknown }, ctx: string): T {
+  if (r.error) throw new Error(`pairDevice: ${ctx}: ${(r.error as { message?: string }).message ?? String(r.error)}`);
+  if (r.data === null) throw new Error(`pairDevice: ${ctx}: no data returned`);
+  return r.data;
+}
+
+async function postJson(url: string, init: RequestInit, ctx: string): Promise<unknown> {
+  const r = await fetch(url, init);
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`pairDevice: ${ctx}: HTTP ${r.status}: ${body}`);
+  }
+  return await r.json();
+}
+```
+
+Apply `unwrap` to every `.select().single()` / `.admin.createUser()` / `.insert()` / `.signInWithPassword()` result. Use `postJson` for the three `fetch` calls (pairing-request, pairing-claim, pairing-status).
+
+### Step 4: Add concurrent-rotation test
+
+In `supabase/functions/tests/refresh.test.ts`, add a third test BEFORE the commit:
+
+```ts
+Deno.test({
+  name: "concurrent refresh with same old token — only one wins",
+  sanitizeOps: false, sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    // Fire two refreshes in parallel with the SAME old refresh token.
+    // Without the CAS guard, both could return 200 with different new tokens.
+    const [a, b] = await Promise.all([
+      fetch(`${FN}/devices-refresh`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: creds.refresh_token }),
+      }),
+      fetch(`${FN}/devices-refresh`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: creds.refresh_token }),
+      }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    // Drain both bodies so Deno's resource sanitizer is happy regardless of outcome:
+    await a.body?.cancel();
+    await b.body?.cancel();
+    assertEquals(statuses, [200, 401], "exactly one request must win the rotation");
+  },
+});
+```
+
+Note: this test is timing-sensitive. `Promise.all` with two `fetch`es does reach the function concurrently under `supabase functions serve` locally, but the two DB updates may still serialize on Postgres row locking. What matters for correctness is that BOTH can't return 200 — the CAS guard guarantees that via the `.eq("refresh_token_hash", h)` match which fails after the first UPDATE commits. If this test flakes in CI, the fix is not to weaken the assertion; it's to investigate whether the function's request handling is actually parallel.
+
+### Step 5: Re-run all refresh tests
+
+```bash
+deno test --allow-net --allow-env supabase/functions/tests/refresh.test.ts
+```
+Expected: `ok | 3 passed`.
+
+Then the full suite:
+```bash
+deno test --allow-net --allow-env supabase/functions/tests/
+```
+Expected: `ok | 16 passed`.
+
+### Step 6: Commit
+
+```bash
+git add supabase/functions/devices-refresh/index.ts supabase/functions/tests/_helpers.ts supabase/functions/tests/refresh.test.ts
+git commit -m "fix(fn): atomic CAS on devices-refresh + loud DEVICE_JWT_SECRET; helper error-surfacing"
+```
+
+### Follow-ups (not in this task)
+
+- Add a migration for `UNIQUE (refresh_token_hash) WHERE refresh_token_hash IS NOT NULL` plus a supporting index. Enforces uniqueness as a DB invariant and turns the refresh lookup into an index scan. Defer to a dedicated schema-hardening pass after Task 27.
+- Consider renaming `refresh.test.ts` → `devices_refresh.test.ts` for naming consistency with eventual `devices_config.test.ts`, `devices_heartbeat.test.ts`, `devices_cache_status.test.ts`. Defer; trivial rename with `git mv` when Task 23 lands.
+
+---
+
 ## Task 23: Edge Function — `devices-config` with ETag
 
 Returns the full device-facing config. Supports `If-None-Match` → 304.
