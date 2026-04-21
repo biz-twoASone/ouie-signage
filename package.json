@@ -1,0 +1,13 @@
+{
+  "name": "smart-tv-video-viewer",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm --filter dashboard dev",
+    "build": "pnpm --filter dashboard build",
+    "start": "pnpm --filter dashboard start",
+    "lint": "pnpm --filter dashboard lint",
+    "test:fn": "deno task test",
+    "test:e2e": "pnpm --filter dashboard exec playwright test"
+  }
+}
