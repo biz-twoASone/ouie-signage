@@ -1428,6 +1428,149 @@ git commit -m "feat(fn): service-role client and device auth extractor"
 
 ---
 
+## Task 18b: Harden shared modules — claim shape check, role-regression test, loud env failures
+
+**Why this exists:** Reviewers of Tasks 16 and 18 flagged three defense-in-depth gaps that CLAUDE.md's cross-tenant-leakage rule elevates to non-optional:
+1. `verifyDeviceAccessToken` uses `payload as DeviceClaims` without runtime validation; a malformed-but-signed token would be returned with a non-string `tenant_id` and passed into `WHERE tenant_id = $1` filters.
+2. There is no regression test for the `role !== "device"` check — a one-character flip (`!==` → `===`) would silently make every admin-role token authenticate as a device.
+3. `serviceRoleClient()` and `r2ConfigFromEnv()` silently return empty-string credentials on missing env vars, deferring failure to request time with confusing errors instead of failing loudly at startup.
+
+**Files:**
+- Modify: `supabase/functions/_shared/jwt.ts`
+- Modify: `supabase/functions/_shared/supabase.ts`
+- Modify: `supabase/functions/_shared/r2.ts`
+- Modify: `supabase/functions/tests/jwt.test.ts`
+
+- [ ] **Step 1: Add failing test — role-mismatch rejection**
+
+Append to `supabase/functions/tests/jwt.test.ts` (below the existing 3 tests):
+
+```ts
+import { create } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+
+Deno.test("verify rejects token with wrong role claim", async () => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const badRoleToken = await create(
+    { alg: "HS256", typ: "JWT" },
+    { sub: "d1", tenant_id: "t1", role: "admin", iat: now, exp: now + 60 },
+    key,
+  );
+  await assertRejects(() => verifyDeviceAccessToken(badRoleToken, SECRET));
+});
+
+Deno.test("verify rejects token missing tenant_id claim", async () => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const malformedToken = await create(
+    { alg: "HS256", typ: "JWT" },
+    { sub: "d1", role: "device", iat: now, exp: now + 60 },
+    key,
+  );
+  await assertRejects(() => verifyDeviceAccessToken(malformedToken, SECRET));
+});
+```
+
+- [ ] **Step 2: Run tests to confirm the role-mismatch test passes but the tenant_id test fails**
+
+```bash
+deno test --allow-net supabase/functions/tests/jwt.test.ts
+```
+Expected: 4 passed, 1 failed. The role-mismatch test already passes because `jwt.ts:46` throws on `payload.role !== "device"`. The missing-tenant_id test fails because the current implementation returns the payload without validating claim shapes — this is the bug we're fixing.
+
+- [ ] **Step 3: Harden `verifyDeviceAccessToken` with runtime shape validation**
+
+Replace the final block of `verifyDeviceAccessToken` in `supabase/functions/_shared/jwt.ts`:
+
+```ts
+export async function verifyDeviceAccessToken(
+  token: string,
+  secret: string,
+): Promise<DeviceClaims> {
+  const key = await importKey(secret);
+  const payload = await verify(token, key);
+  if (
+    typeof payload.sub !== "string" ||
+    typeof payload.tenant_id !== "string" ||
+    payload.role !== "device" ||
+    typeof payload.iat !== "number" ||
+    typeof payload.exp !== "number"
+  ) {
+    throw new Error("malformed device token");
+  }
+  return payload as DeviceClaims;
+}
+```
+
+Run tests again — all 5 should pass:
+
+```bash
+deno test --allow-net supabase/functions/tests/jwt.test.ts
+```
+Expected: `ok | 5 passed`.
+
+- [ ] **Step 4: Fail loudly on missing env vars in `supabase.ts`**
+
+Replace the body of `serviceRoleClient` in `supabase/functions/_shared/supabase.ts`:
+
+```ts
+export function serviceRoleClient(): SupabaseClient {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+```
+
+- [ ] **Step 5: Fail loudly on missing env vars in `r2.ts`**
+
+Replace `r2ConfigFromEnv` in `supabase/functions/_shared/r2.ts`:
+
+```ts
+export function r2ConfigFromEnv(): R2Config {
+  const accountId = Deno.env.get("R2_ACCOUNT_ID");
+  const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID");
+  const secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY");
+  const bucket = Deno.env.get("R2_BUCKET");
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+    throw new Error(
+      "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET must be set",
+    );
+  }
+  return { accountId, accessKeyId, secretAccessKey, bucket };
+}
+```
+
+- [ ] **Step 6: Verify all shared-module tests still pass**
+
+```bash
+deno test --allow-net supabase/functions/tests/
+```
+Expected: all tests in `jwt.test.ts`, `r2.test.ts`, `auth.test.ts` pass. The R2 tests do not touch `r2ConfigFromEnv` (they pass config inline) so they continue to pass without env vars set.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add supabase/functions/_shared/jwt.ts supabase/functions/_shared/supabase.ts supabase/functions/_shared/r2.ts supabase/functions/tests/jwt.test.ts
+git commit -m "feat(fn): harden shared modules with claim shape validation and loud env failures"
+```
+
+---
+
 ## Task 19: Edge Function — `pairing-request`
 
 Issues a new pairing code. Called by the TV before it has any credentials.
