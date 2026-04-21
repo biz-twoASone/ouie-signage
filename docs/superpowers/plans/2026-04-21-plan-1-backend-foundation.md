@@ -1712,7 +1712,14 @@ async function seedUserAndTenant() {
   return { userJwt: sess.session!.access_token, tenantId: tenant!.id, storeId: store!.id };
 }
 
-Deno.test("pairing-claim creates device and returns tokens", async () => {
+// sanitize* disabled: supabase-auth-js's signInWithPassword starts an
+// _startAutoRefresh setInterval that Deno's leak sanitizer flags even with
+// persistSession: false. Endpoint behavior is fully exercised by the assertions.
+Deno.test({
+  name: "pairing-claim creates device and returns tokens",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
   const { userJwt, storeId } = await seedUserAndTenant();
 
   const r1 = await fetch(`${FN_URL}/pairing-request`, {
@@ -1736,6 +1743,7 @@ Deno.test("pairing-claim creates device and returns tokens", async () => {
   assert(body.access_token);
   assert(body.refresh_token);
   assert(body.expires_in > 0);
+  },
 });
 ```
 
