@@ -5,6 +5,9 @@ import { mintDeviceAccessToken, generateRefreshToken, hashRefreshToken } from ".
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method", { status: 405 });
 
+  const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET");
+  if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");
+
   // Require Supabase auth header (user JWT)
   const userJwt = req.headers.get("Authorization")?.replace(/^Bearer /, "");
   if (!userJwt) return new Response("unauthenticated", { status: 401 });
@@ -29,20 +32,35 @@ Deno.serve(async (req) => {
   // Now use service role for pairing bookkeeping (the pairing row is not accessible by RLS):
   const svc = serviceRoleClient();
 
-  const { data: pr, error: prErr } = await svc
+  const now = new Date().toISOString();
+
+  // Atomic claim: UPDATE ... WHERE code=X AND claimed_at IS NULL AND expires_at > now.
+  // Returns the row iff this request won the race; null otherwise. This collapses the
+  // previous check-then-update TOCTOU into one SQL statement.
+  const { data: claimed, error: claimErr } = await svc
     .from("pairing_requests")
-    .select("code, expires_at, claimed_at")
+    .update({ claimed_at: now })
     .eq("code", code)
+    .is("claimed_at", null)
+    .gt("expires_at", now)
+    .select("code")
     .maybeSingle();
-  if (prErr) return new Response("db: " + prErr.message, { status: 500 });
-  if (!pr) return new Response("code not found", { status: 404 });
-  if (pr.claimed_at) return new Response("already claimed", { status: 409 });
-  if (new Date(pr.expires_at) < new Date()) return new Response("expired", { status: 410 });
+  if (claimErr) return new Response("db: " + claimErr.message, { status: 500 });
+  if (!claimed) {
+    // Disambiguate missing/claimed/expired for UX (this is the cold path):
+    const { data: pr } = await svc
+      .from("pairing_requests")
+      .select("claimed_at, expires_at")
+      .eq("code", code)
+      .maybeSingle();
+    if (!pr) return new Response("code not found", { status: 404 });
+    if (pr.claimed_at) return new Response("already claimed", { status: 409 });
+    return new Response("expired", { status: 410 });
+  }
 
   // Create device:
   const refresh = generateRefreshToken();
   const refreshHash = await hashRefreshToken(refresh);
-  const now = new Date().toISOString();
 
   const { data: device, error: devErr } = await svc.from("devices").insert({
     tenant_id: store.tenant_id,
@@ -53,19 +71,26 @@ Deno.serve(async (req) => {
     refresh_token_hash: refreshHash,
     refresh_token_issued_at: now,
   }).select("id").single();
-  if (devErr) return new Response("db: " + devErr.message, { status: 500 });
+  if (devErr) {
+    // Roll back the pairing_requests claim so the original TV can retry:
+    await svc.from("pairing_requests")
+      .update({ claimed_at: null })
+      .eq("code", code)
+      .is("claimed_device_id", null);
+    return new Response("db: " + devErr.message, { status: 500 });
+  }
 
-  await svc.from("pairing_requests").update({
-    claimed_at: now,
-    claimed_device_id: device.id,
-  }).eq("code", code);
+  // Link claim → device (a second UPDATE because we claimed before knowing device.id):
+  await svc.from("pairing_requests")
+    .update({ claimed_device_id: device.id })
+    .eq("code", code);
 
   const ttl = 3600;
   const accessToken = await mintDeviceAccessToken({
     deviceId: device.id,
     tenantId: store.tenant_id,
     ttlSeconds: ttl,
-    secret: Deno.env.get("DEVICE_JWT_SECRET")!,
+    secret: jwtSecret,
   });
 
   return Response.json({
