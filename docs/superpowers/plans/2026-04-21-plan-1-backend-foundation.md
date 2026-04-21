@@ -2804,6 +2804,15 @@ git add supabase/functions/devices-heartbeat supabase/functions/tests/heartbeat.
 git commit -m "feat(fn): devices-heartbeat endpoint"
 ```
 
+### Review findings deferred to post-cluster hardening sweep (after Task 25)
+
+Post-implementation code-quality review added two items to the sweep (in addition to the Task 23 findings):
+
+4. **Heartbeat test is status-only — no side-effect verification.** `assertEquals(r.status, 204)` is asserted, but the test does not re-fetch the device row to confirm `last_seen_at` was actually written or that `cache_storage_info` round-tripped as JSONB. A regression that swaps column semantics silently would still return 204. Fix: add a service-role re-fetch after the POST and assert `cache_storage_info` equals the posted object and `last_seen_at` is non-null.
+5. **Heartbeat updates a revoked device's `last_seen_at`.** Unlike `devices-config`, heartbeat does not filter on `revoked_at IS NULL`. A revoked device's heartbeat happily bumps `last_seen_at`, confusing operator dashboards ("this revoked TV is still alive?"). Access-token TTL bounds the zombie-heartbeat window, but `last_seen_at` should be a trustworthy liveness signal. Fix: add `.is("revoked_at", null)` to the `.eq("id", claims.sub)` chain in the UPDATE.
+
+These are small enough to bundle with the Task 23 items. The sweep will touch 23 (I1/I2/I3), 24 (#4, #5), 25 (TBD after its review), and any uniform patterns (loud env check for all three device endpoints).
+
 ---
 
 ## Task 25: Edge Function — `devices-cache-status`
