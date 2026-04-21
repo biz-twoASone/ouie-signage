@@ -47,10 +47,14 @@ export async function presignR2PutUrl(params: R2Config & {
 }
 
 export function r2ConfigFromEnv(): R2Config {
-  return {
-    accountId: Deno.env.get("R2_ACCOUNT_ID") ?? "",
-    accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID") ?? "",
-    secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "",
-    bucket: Deno.env.get("R2_BUCKET") ?? "",
-  };
+  const accountId = Deno.env.get("R2_ACCOUNT_ID");
+  const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID");
+  const secretAccessKey = Deno.env.get("R2_SECRET_ACCESS_KEY");
+  const bucket = Deno.env.get("R2_BUCKET");
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+    throw new Error(
+      "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET must be set",
+    );
+  }
+  return { accountId, accessKeyId, secretAccessKey, bucket };
 }

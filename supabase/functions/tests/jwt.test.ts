@@ -1,5 +1,6 @@
 // supabase/functions/tests/jwt.test.ts
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { create } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 import { mintDeviceAccessToken, verifyDeviceAccessToken } from "../_shared/jwt.ts";
 
 const SECRET = "super-secret-jwt-token-with-at-least-32-characters-long";
@@ -36,4 +37,38 @@ Deno.test("verify rejects expired token", async () => {
     secret: SECRET,
   });
   await assertRejects(() => verifyDeviceAccessToken(token, SECRET));
+});
+
+Deno.test("verify rejects token with wrong role claim", async () => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const badRoleToken = await create(
+    { alg: "HS256", typ: "JWT" },
+    { sub: "d1", tenant_id: "t1", role: "admin", iat: now, exp: now + 60 },
+    key,
+  );
+  await assertRejects(() => verifyDeviceAccessToken(badRoleToken, SECRET));
+});
+
+Deno.test("verify rejects token missing tenant_id claim", async () => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const malformedToken = await create(
+    { alg: "HS256", typ: "JWT" },
+    { sub: "d1", role: "device", iat: now, exp: now + 60 },
+    key,
+  );
+  await assertRejects(() => verifyDeviceAccessToken(malformedToken, SECRET));
 });

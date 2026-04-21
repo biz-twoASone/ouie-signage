@@ -42,9 +42,17 @@ export async function verifyDeviceAccessToken(
   secret: string,
 ): Promise<DeviceClaims> {
   const key = await importKey(secret);
-  const payload = await verify(token, key) as DeviceClaims;
-  if (payload.role !== "device") throw new Error("not a device token");
-  return payload;
+  const payload = await verify(token, key);
+  if (
+    typeof payload.sub !== "string" ||
+    typeof (payload as Record<string, unknown>).tenant_id !== "string" ||
+    payload.role !== "device" ||
+    typeof payload.iat !== "number" ||
+    typeof payload.exp !== "number"
+  ) {
+    throw new Error("malformed device token");
+  }
+  return payload as unknown as DeviceClaims;
 }
 
 /** Generate a 64-char hex opaque refresh token. Stored server-side as SHA-256 hex. */
