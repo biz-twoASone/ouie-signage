@@ -1,6 +1,7 @@
 // supabase/functions/tests/heartbeat.test.ts
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { pairDevice } from "./_helpers.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const FN = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
 
@@ -31,5 +32,15 @@ Deno.test({
     });
     assertEquals(r.status, 204);
     await r.body?.cancel();
+
+    const svc = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const { data: dev } = await svc.from("devices")
+      .select("last_seen_at, cache_storage_info")
+      .eq("id", creds.device_id).single();
+    assertEquals(dev?.cache_storage_info, { root: "internal", total_bytes: 1000, free_bytes: 500 });
+    assertNotEquals(dev?.last_seen_at, null);
   },
 });

@@ -6,9 +6,12 @@ import { presignR2GetUrl, r2ConfigFromEnv } from "../_shared/r2.ts";
 Deno.serve(async (req) => {
   if (req.method !== "GET") return new Response("method", { status: 405 });
 
+  const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET");
+  if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");
+
   let claims;
   try {
-    claims = await extractDeviceFromRequest(req, Deno.env.get("DEVICE_JWT_SECRET")!);
+    claims = await extractDeviceFromRequest(req, jwtSecret);
   } catch {
     return new Response("unauthorized", { status: 401 });
   }
@@ -37,7 +40,8 @@ Deno.serve(async (req) => {
         (groupIds.length ? `,target_device_group_id.in.(${groupIds.join(",")})` : ""),
     )
     .lte("effective_at", new Date().toISOString())
-    .order("effective_at", { ascending: false });
+    .order("effective_at", { ascending: false })
+    .order("id", { ascending: true });
 
   // Collect all referenced playlists:
   const playlistIds = new Set<string>();
@@ -75,7 +79,7 @@ Deno.serve(async (req) => {
       id: dev.id,
       store_id: dev.store_id,
       fallback_playlist_id: dev.fallback_playlist_id,
-      timezone: (dev as any).stores.timezone,
+      timezone: (dev as { stores: { timezone: string } }).stores.timezone,
     },
     rules: rules ?? [],
     playlists: (playlists ?? []).map((p) => ({

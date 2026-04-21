@@ -2902,7 +2902,7 @@ Deno.serve(async (req) => {
     device_id: claims.sub,
     media_id: e.media_id ?? null,
     state: e.state,
-    message: e.message?.slice(0, 500) ?? null,
+    message: typeof e.message === "string" ? e.message.slice(0, 500) : null,
   }));
   const { error } = await svc.from("cache_events").insert(rows);
   if (error) return new Response("db: " + error.message, { status: 500 });

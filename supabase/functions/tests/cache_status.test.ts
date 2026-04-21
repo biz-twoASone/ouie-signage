@@ -38,5 +38,10 @@ Deno.test({
       creds.device_id,
     );
     assert((data ?? []).length >= 1);
+    const row = (data ?? [])[0];
+    assertEquals(row.state, "cached");
+    assertEquals(row.message, "initial");
+    assertEquals(row.media_id, null);
+    assertEquals(row.device_id, creds.device_id);
   },
 });
