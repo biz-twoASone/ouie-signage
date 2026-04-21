@@ -1632,7 +1632,8 @@ Deno.serve(async (req) => {
   const sb = serviceRoleClient();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  // Retry until we get a unique code on the unclaimed unique index:
+  // Retry on PK collision (SQLSTATE 23505). Collisions are astronomically rare
+  // against a 31^6 code space at 1500-device scale, but belt-and-braces.
   for (let i = 0; i < 5; i++) {
     const code = generateCode();
     const { error } = await sb.from("pairing_requests").insert({
@@ -1644,7 +1645,7 @@ Deno.serve(async (req) => {
     if (!error) {
       return Response.json({ code, expires_at: expiresAt });
     }
-    if (!String(error.message).includes("duplicate")) {
+    if (error.code !== "23505") {
       return new Response("db error: " + error.message, { status: 500 });
     }
   }
