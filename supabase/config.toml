@@ -419,3 +419,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/devices-refresh/deno.json"
 entrypoint = "./functions/devices-refresh/index.ts"
+
+[functions.devices-config]
+enabled = true
+verify_jwt = false
+import_map = "./functions/devices-config/deno.json"
+entrypoint = "./functions/devices-config/index.ts"
