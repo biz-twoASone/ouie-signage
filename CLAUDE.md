@@ -1,6 +1,6 @@
 # Smart TV Signage — project notes
 
-**Status (as of 2026-04-21):** Mid-execution of Plan 1 (backend foundation). 22 of 27 tasks complete; up next is Task 23 (`devices-config` with ETag).
+**Status (as of 2026-04-21):** **Plan 1 complete.** All 27 tasks committed; 23/23 Deno integration tests pass; pgtap (schema + constraints + RLS isolation) PASS. Local E2E green. Next: write Plan 2 (Next.js dashboard) via `superpowers:writing-plans` — but only when the user says go. Pre-Plan-2 there are two loose ends worth deciding first: (a) deploy Plan 1 artifacts to the remote Supabase project (see Post-Plan checks at the bottom of the plan file), and (b) the `.env.local` env-pointing quirk noted below.
 
 ## Do not re-brainstorm
 
@@ -14,10 +14,11 @@ Design is final and committed. Do NOT:
 Before doing anything in this project:
 
 1. Read `docs/superpowers/specs/2026-04-21-signage-v1-design.md` (the spec).
-2. Read the active plan in `docs/superpowers/plans/` — there will be one with unchecked `- [ ]` items. Currently: `2026-04-21-plan-1-backend-foundation.md`.
+2. List active plans in `docs/superpowers/plans/`. A plan is "mid-execution" if git log shows commits stopping partway through its tasks. Plan 1 is DONE as of 2026-04-21. Plan 2+ are not yet written.
 3. Run `git log --oneline -20` and `git branch --show-current` to see where execution stopped.
-4. If mid-plan: use the `superpowers:subagent-driven-development` skill to continue task-by-task. Do NOT invoke the brainstorming or writing-plans skills.
-5. Check `~/.claude/projects/-Users-anthonygunawan-Sandbox-ai-projects-smart-tv-video-viewer/memory/MEMORY.md` for accumulated context (user profile, prior decisions, feedback rules).
+4. If mid-plan: use `superpowers:subagent-driven-development` to continue task-by-task. Do NOT invoke `brainstorming` or `writing-plans`.
+5. If between plans (previous plan done, next not yet written): ASK the user before starting the next plan. Don't auto-start writing-plans — user may want to deploy/test first, or defer.
+6. Check `~/.claude/projects/-Users-anthonygunawan-Sandbox-ai-projects-smart-tv-video-viewer/memory/MEMORY.md` for accumulated context (user profile, prior decisions, feedback rules).
 
 ## Key file pointers
 
@@ -33,6 +34,8 @@ Before doing anything in this project:
 - **No placeholders, no TODOs.** If you catch yourself about to write `// TODO: implement later`, stop and either finish it or escalate to the user.
 - **TDD for non-trivial Edge Functions.** Migration tasks are not TDD (the schema SQL is itself the spec); Edge Function tasks write Deno tests first, implement, run tests, commit.
 - **Edge runtime does not hot-reload.** After editing any `supabase/functions/**/*.ts` file while `supabase functions serve` is already running, the container serves the old code until restarted. Run `docker restart supabase_edge_runtime_smart-tv-video-viewer` (or kill + re-run `supabase functions serve --env-file .env.local`) before re-running Deno tests — otherwise a "fix" appears not to take effect.
+- **`.env.local` env pointing quirk.** As of end-of-Plan-1, `.env.local` points at a remote Supabase project (not `127.0.0.1:54321`), and the remote has no migrations applied. Tests therefore need env overrides to run green against local: recover local demo keys via `supabase status -o env`, then prefix `deno test` commands with `SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<local> SUPABASE_SERVICE_ROLE_KEY=<local>`. Not fixed yet — worth a decision: either point `.env.local` at local, or introduce a separate `.env.test` / `.env.production` split. Pending user call.
+- **PostgREST schema cache staleness.** After `supabase db reset`, PostgREST can still serve the old schema cache; `NOTIFY pgrst, 'reload schema'` alone isn't always enough. Fix: `docker restart supabase_rest_smart-tv-video-viewer`. Same pattern as the edge runtime restart.
 
 ## Stack summary (one-liner for fresh Claude)
 
