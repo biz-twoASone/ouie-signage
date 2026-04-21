@@ -2033,6 +2033,7 @@ Deno.test("pending code returns pending status", async () => {
 Deno.test("unknown code returns 404", async () => {
   const res = await fetch(`${FN_URL}?code=XXXXXX`);
   assertEquals(res.status, 404);
+  await res.body?.cancel(); // consume body to satisfy Deno's resource sanitizer
 });
 ```
 
