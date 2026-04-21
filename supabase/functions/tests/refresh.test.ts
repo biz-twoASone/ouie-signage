@@ -48,3 +48,30 @@ Deno.test({
     await second.body?.cancel();
   },
 });
+
+Deno.test({
+  name: "concurrent refresh with same old token — only one wins",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    // Fire two refreshes in parallel with the SAME old refresh token.
+    // Without the CAS guard, both could return 200 with different new tokens.
+    const [a, b] = await Promise.all([
+      fetch(`${FN}/devices-refresh`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: creds.refresh_token }),
+      }),
+      fetch(`${FN}/devices-refresh`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: creds.refresh_token }),
+      }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    await a.body?.cancel();
+    await b.body?.cancel();
+    assertEquals(statuses, [200, 401], "exactly one request must win the rotation");
+  },
+});

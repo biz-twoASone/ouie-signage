@@ -19,41 +19,125 @@ export type PairedDeviceCreds = {
   user_jwt: string;
 };
 
+function unwrap<T>(r: { data: T | null; error: unknown }, ctx: string): NonNullable<T> {
+  if (r.error) {
+    throw new Error(
+      `pairDevice: ${ctx}: ${(r.error as { message?: string }).message ?? String(r.error)}`,
+    );
+  }
+  if (r.data === null || r.data === undefined) {
+    throw new Error(`pairDevice: ${ctx}: no data returned`);
+  }
+  return r.data as NonNullable<T>;
+}
+
+// Supabase auth responses are discriminated unions where the error branch has
+// `data` typed as a fully-null-filled object rather than `null`. Normalize to
+// the `{ data: T | null; error }` shape that `unwrap` expects so we get the
+// same throw-on-error semantics.
+function normalizeAuth<T>(r: { data: T; error: unknown } | { data: unknown; error: unknown }): {
+  data: T | null;
+  error: unknown;
+} {
+  const err = (r as { error: unknown }).error;
+  return { data: err ? null : (r as { data: T }).data, error: err };
+}
+
+async function postJson(url: string, init: RequestInit, ctx: string): Promise<unknown> {
+  const r = await fetch(url, init);
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`pairDevice: ${ctx}: HTTP ${r.status}: ${body}`);
+  }
+  return await r.json();
+}
+
 export async function pairDevice(): Promise<PairedDeviceCreds> {
   const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
   const email = `u${Date.now()}${Math.random()}@test.local`;
-  const { data: user } = await svc.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    password: "P@ssw0rd123",
-  });
-  const { data: tenant } = await svc.from("tenants").insert({ name: "T" }).select().single();
-  await svc.from("tenant_members").insert({ tenant_id: tenant!.id, user_id: user.user!.id });
-  const { data: store } = await svc
-    .from("stores").insert({ tenant_id: tenant!.id, name: "S" }).select().single();
+
+  const createUserRes = unwrap(
+    normalizeAuth<{ user: { id: string } | null }>(
+      await svc.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        password: "P@ssw0rd123",
+      }),
+    ),
+    "admin.createUser",
+  );
+  const userId = createUserRes.user?.id;
+  if (!userId) throw new Error("pairDevice: admin.createUser: user is null");
+
+  const tenant = unwrap<{ id: string }>(
+    await svc.from("tenants").insert({ name: "T" }).select().single(),
+    "insert tenants",
+  );
+
+  unwrap<{ tenant_id: string }>(
+    await svc.from("tenant_members").insert({ tenant_id: tenant.id, user_id: userId }).select()
+      .single(),
+    "insert tenant_members",
+  );
+
+  const store = unwrap<{ id: string }>(
+    await svc.from("stores").insert({ tenant_id: tenant.id, name: "S" }).select().single(),
+    "insert stores",
+  );
+
   const anon = createClient(SUPABASE_URL, ANON, { auth: { persistSession: false } });
-  const { data: sess } = await anon.auth.signInWithPassword({ email, password: "P@ssw0rd123" });
-  const r1 = await fetch(`${FN}/pairing-request`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-  });
-  const { code } = await r1.json();
-  await fetch(`${FN}/pairing-claim`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      Authorization: `Bearer ${sess.session!.access_token}`,
+  const signIn = unwrap(
+    normalizeAuth<{ session: { access_token: string } | null }>(
+      await anon.auth.signInWithPassword({ email, password: "P@ssw0rd123" }),
+    ),
+    "signInWithPassword",
+  );
+  const userJwt = signIn.session?.access_token;
+  if (!userJwt) throw new Error("pairDevice: signInWithPassword: session is null");
+
+  const r1 = await postJson(
+    `${FN}/pairing-request`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
     },
-    body: JSON.stringify({ code, store_id: store!.id, name: "TV" }),
-  });
-  const pickup = await fetch(`${FN}/pairing-status?code=${code}`).then((r) => r.json());
+    "pairing-request",
+  ) as { code?: string };
+  const code = r1.code;
+  if (!code) throw new Error("pairDevice: pairing-request: missing code");
+
+  await postJson(
+    `${FN}/pairing-claim`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${userJwt}`,
+      },
+      body: JSON.stringify({ code, store_id: store.id, name: "TV" }),
+    },
+    "pairing-claim",
+  );
+
+  const pickup = await postJson(
+    `${FN}/pairing-status?code=${code}`,
+    {},
+    "pairing-status",
+  ) as { device_id?: string; access_token?: string; refresh_token?: string };
+
+  if (!pickup.device_id || !pickup.access_token || !pickup.refresh_token) {
+    throw new Error(
+      `pairDevice: pairing-status: incomplete pickup ${JSON.stringify(pickup)}`,
+    );
+  }
+
   return {
     device_id: pickup.device_id,
     access_token: pickup.access_token,
     refresh_token: pickup.refresh_token,
-    tenant_id: tenant!.id,
-    store_id: store!.id,
-    user_jwt: sess.session!.access_token,
+    tenant_id: tenant.id,
+    store_id: store.id,
+    user_jwt: userJwt,
   };
 }

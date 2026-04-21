@@ -4,6 +4,10 @@ import { mintDeviceAccessToken, generateRefreshToken, hashRefreshToken } from ".
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method", { status: 405 });
+
+  const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET");
+  if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");
+
   const body = await req.json().catch(() => ({}));
   const raw = body.refresh_token;
   if (typeof raw !== "string" || raw.length < 20) {
@@ -24,18 +28,22 @@ Deno.serve(async (req) => {
   const newHash = await hashRefreshToken(newRaw);
   const now = new Date().toISOString();
 
-  const { error: updErr } = await svc.from("devices").update({
+  const { data: rotated, error: updErr } = await svc.from("devices").update({
     refresh_token_hash: newHash,
     refresh_token_last_used_at: now,
     refresh_token_issued_at: now,
-  }).eq("id", device.id);
+  }).eq("id", device.id)
+    .eq("refresh_token_hash", h)   // CAS guard — fails if another request rotated first
+    .select("id")
+    .maybeSingle();
   if (updErr) return new Response("db: " + updErr.message, { status: 500 });
+  if (!rotated) return new Response("invalid refresh", { status: 401 });   // lost the race or stolen
 
   const accessToken = await mintDeviceAccessToken({
     deviceId: device.id,
     tenantId: device.tenant_id,
     ttlSeconds: device.access_token_ttl_seconds,
-    secret: Deno.env.get("DEVICE_JWT_SECRET")!,
+    secret: jwtSecret,
   });
 
   return Response.json({
