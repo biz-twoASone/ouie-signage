@@ -28,3 +28,27 @@ Deno.test({
     await r.body?.cancel();
   },
 });
+
+// Cross-tenant isolation guard. The endpoint's security correctness hinges on
+// the user-scoped anon client + RLS: tenant A's JWT must not be able to
+// target tenant B's device. If anyone ever swaps the user client for the
+// service-role client, this test should fail loudly.
+Deno.test({
+  name: "sync-now rejects cross-tenant device target with 403",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const tenantA = await pairDevice();
+    const tenantB = await pairDevice();
+    const r = await fetch(`${FN}/devices-sync-now`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${tenantA.user_jwt}`,
+      },
+      body: JSON.stringify({ device_id: tenantB.device_id }),
+    });
+    assertEquals(r.status, 403);
+    await r.body?.cancel();
+  },
+});

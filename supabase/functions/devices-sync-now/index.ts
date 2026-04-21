@@ -30,13 +30,18 @@ Deno.serve(async (req) => {
 
   const targetTokens: string[] = [];
   if (deviceId) {
-    const { data } = await userClient.from("devices").select("id,fcm_token").eq("id", deviceId)
+    const { data, error } = await userClient.from("devices").select("id,fcm_token").eq(
+      "id",
+      deviceId,
+    )
       .maybeSingle();
+    if (error) return new Response("db: " + error.message, { status: 500 });
     if (!data) return new Response("forbidden", { status: 403 });
     if (data.fcm_token) targetTokens.push(data.fcm_token);
   } else if (groupId) {
-    const { data } = await userClient.from("device_group_members")
+    const { data, error } = await userClient.from("device_group_members")
       .select("device_id, devices!inner(fcm_token)").eq("device_group_id", groupId);
+    if (error) return new Response("db: " + error.message, { status: 500 });
     for (const row of data ?? []) {
       const token = (row as { devices?: { fcm_token?: string | null } }).devices?.fcm_token;
       if (typeof token === "string" && token.length > 0) targetTokens.push(token);
