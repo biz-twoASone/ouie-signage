@@ -1001,12 +1001,13 @@ SELECT throws_ok(
   'user A cannot insert into tenant B stores'
 );
 
-SELECT throws_ok(
+-- RLS filters non-visible rows out of the UPDATE target set BEFORE WITH CHECK
+-- runs, so the statement succeeds as a no-op rather than throwing. Use lives_ok.
+SELECT lives_ok(
   $$ UPDATE playlists SET name = 'hacked' WHERE tenant_id = '22222222-2222-2222-2222-222222222222' $$,
-  NULL, NULL,
-  'user A UPDATE against tenant B is filtered (no-op by RLS, not throw) — check via count'
+  'user A UPDATE against tenant B is filtered to a no-op (not an error)'
 );
--- (RLS makes UPDATE a no-op rather than throw; verify count):
+-- Verify the row is untouched and unreadable from user A:
 SELECT is( (SELECT name FROM playlists WHERE id='bbbb4444-bbbb-bbbb-bbbb-bbbbbbbbbbbb'), NULL,
            'user A cannot even SELECT tenant B playlist to see it');
 
