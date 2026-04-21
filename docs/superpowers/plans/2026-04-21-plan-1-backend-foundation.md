@@ -777,6 +777,54 @@ git add supabase/migrations/20260421001100_rls_enable.sql supabase/migrations/20
 git commit -m "feat(db): enable RLS and human-access policies on all tenant tables"
 ```
 
+**Membership-write policy decision (v1):** `tenant_members` has a SELECT-only policy. Owners cannot invite or remove teammates via PostgREST — v1 is single-tenant UX, so membership writes happen via a service-role seed script, not end-user flows. When Plan 2 (dashboard) adds invites, this decision needs to be revisited (likely via an Edge Function `/members` endpoint, not by relaxing RLS).
+
+---
+
+## Task 12b: Harden SECURITY DEFINER helper + add supporting index
+
+**Why this exists:** Code-review follow-up to Task 12. The original `auth_user_tenant_ids()` function relied on the caller's `search_path`, which is the canonical CVE-class footgun for `SECURITY DEFINER` functions. Standard Supabase hardening pins `search_path` on the function itself. Additionally, `tenant_members`'s PK `(tenant_id, user_id)` doesn't index lookups by `user_id` alone — the helper scans. At v1 scale this is noise, but an index is 2 lines and future-proofs every RLS check.
+
+**Files:**
+- Create: `supabase/migrations/20260421001300_rls_function_hardening.sql`
+
+- [ ] **Step 1: Write migration**
+
+```sql
+-- supabase/migrations/20260421001300_rls_function_hardening.sql
+
+-- Re-create auth_user_tenant_ids() with pinned search_path and schema-qualified table.
+-- Hardens against search_path hijack attacks on SECURITY DEFINER functions.
+CREATE OR REPLACE FUNCTION auth_user_tenant_ids() RETURNS SETOF uuid
+  LANGUAGE sql SECURITY DEFINER STABLE
+  SET search_path = public, pg_catalog
+  AS $$ SELECT tenant_id FROM public.tenant_members WHERE user_id = auth.uid(); $$;
+
+-- Grants don't survive CREATE OR REPLACE in all Postgres versions; re-apply for safety.
+REVOKE ALL ON FUNCTION auth_user_tenant_ids() FROM public;
+GRANT EXECUTE ON FUNCTION auth_user_tenant_ids() TO authenticated, anon;
+
+-- tenant_members PK is (tenant_id, user_id); lookups by user_id alone need their own index.
+-- Every RLS check on every tenant-scoped table hits this path.
+CREATE INDEX IF NOT EXISTS idx_tenant_members_user_id ON tenant_members(user_id);
+```
+
+- [ ] **Step 2: Apply and verify**
+
+```bash
+supabase db reset
+docker exec supabase_db_smart-tv-video-viewer psql -U postgres -c "SELECT proname, proconfig FROM pg_proc WHERE proname = 'auth_user_tenant_ids';"
+docker exec supabase_db_smart-tv-video-viewer psql -U postgres -c "\d tenant_members"
+```
+Expected: `proconfig` contains `search_path=public, pg_catalog`; `\d tenant_members` shows `idx_tenant_members_user_id` on `(user_id)`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/migrations/20260421001300_rls_function_hardening.sql docs/superpowers/plans/2026-04-21-plan-1-backend-foundation.md
+git commit -m "feat(db): harden auth_user_tenant_ids search_path + index tenant_members(user_id)"
+```
+
 ---
 
 ## Task 13: pgtap smoke test — schema shape
