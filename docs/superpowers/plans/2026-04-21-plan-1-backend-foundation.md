@@ -2105,23 +2105,39 @@ ALTER TABLE pairing_requests ADD COLUMN tv_pickup jsonb;
 ```
 Apply: `supabase db reset`.
 
-Update `supabase/functions/pairing-claim/index.ts` — **replace the final return block** so that instead of sending tokens to the dashboard, it stashes them for the TV to pick up and returns only metadata to the dashboard:
+Update `supabase/functions/pairing-claim/index.ts`. **Preserve the Task 20b atomic CAS on `claimed_at` at the top** — it is what prevents the credential-issuance TOCTOU — and ONLY modify:
+1. The order of operations after the device insert (mint the JWT before the link-update so `tv_pickup` can carry it).
+2. The final link-update (which was `{claimed_device_id: device.id}` in 20b) becomes `{claimed_device_id: device.id, tv_pickup: {...}}`.
+3. The response body (no longer carries tokens).
+
+Concretely, replace the section from `// Link claim → device ...` onwards with:
 
 ```ts
-  // ... after building accessToken ...
-  await svc.from("pairing_requests").update({
-    claimed_at: now,
-    claimed_device_id: device.id,
-    tv_pickup: { access_token: accessToken, refresh_token: refresh, expires_in: ttl },
-  }).eq("code", code);
+  // Mint device access JWT BEFORE the final update so we can stash it in tv_pickup:
+  const ttl = 3600;
+  const accessToken = await mintDeviceAccessToken({
+    deviceId: device.id,
+    tenantId: store.tenant_id,
+    ttlSeconds: ttl,
+    secret: jwtSecret,
+  });
+
+  // Link claim → device AND stash the pickup bundle for the TV to drain via
+  // pairing-status. The dashboard never sees the raw tokens.
+  await svc.from("pairing_requests")
+    .update({
+      claimed_device_id: device.id,
+      tv_pickup: { access_token: accessToken, refresh_token: refresh, expires_in: ttl },
+    })
+    .eq("code", code);
 
   return Response.json({
     device_id: device.id,
-    name: name,
+    name: String(name).slice(0, 80),
   });
 ```
 
-Also remove the earlier pairing_requests UPDATE call (now merged).
+**Do NOT touch the atomic CAS block, the device insert, or the device-insert-failure rollback.** Those are load-bearing for the race fix from Task 20b.
 
 - [ ] **Step 5: Re-run pairing_claim test and pairing_status test**
 
