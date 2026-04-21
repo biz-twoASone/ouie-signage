@@ -148,7 +148,11 @@ cat > .env.example <<'EOF'
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_JWT_SECRET=
+# Device JWT HMAC secret (NOT prefixed SUPABASE_: the Supabase CLI refuses to pass
+# SUPABASE_* names through --env-file to the edge runtime, and hosted Supabase
+# reserves that prefix). Reuse the Supabase project's JWT secret value here, or
+# generate any 32+ char random string — both sides of mint/verify just need to match.
+DEVICE_JWT_SECRET=
 
 # Cloudflare R2
 R2_ACCOUNT_ID=
@@ -1811,7 +1815,7 @@ Deno.serve(async (req) => {
     deviceId: device.id,
     tenantId: store.tenant_id,
     ttlSeconds: ttl,
-    secret: Deno.env.get("SUPABASE_JWT_SECRET")!,
+    secret: Deno.env.get("DEVICE_JWT_SECRET")!,
   });
 
   return Response.json({
@@ -2128,7 +2132,7 @@ Deno.serve(async (req) => {
     deviceId: device.id,
     tenantId: device.tenant_id,
     ttlSeconds: device.access_token_ttl_seconds,
-    secret: Deno.env.get("SUPABASE_JWT_SECRET")!,
+    secret: Deno.env.get("DEVICE_JWT_SECRET")!,
   });
 
   return Response.json({
@@ -2216,7 +2220,7 @@ Deno.serve(async (req) => {
   if (req.method !== "GET") return new Response("method", { status: 405 });
 
   let claims;
-  try { claims = await extractDeviceFromRequest(req, Deno.env.get("SUPABASE_JWT_SECRET")!); }
+  try { claims = await extractDeviceFromRequest(req, Deno.env.get("DEVICE_JWT_SECRET")!); }
   catch { return new Response("unauthorized", { status: 401 }); }
 
   const svc = serviceRoleClient();
@@ -2375,7 +2379,7 @@ import { extractDeviceFromRequest } from "../_shared/auth.ts";
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method", { status: 405 });
   let claims;
-  try { claims = await extractDeviceFromRequest(req, Deno.env.get("SUPABASE_JWT_SECRET")!); }
+  try { claims = await extractDeviceFromRequest(req, Deno.env.get("DEVICE_JWT_SECRET")!); }
   catch { return new Response("unauthorized", { status: 401 }); }
 
   const body = await req.json().catch(() => ({}));
@@ -2478,7 +2482,7 @@ import { extractDeviceFromRequest } from "../_shared/auth.ts";
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method", { status: 405 });
   let claims;
-  try { claims = await extractDeviceFromRequest(req, Deno.env.get("SUPABASE_JWT_SECRET")!); }
+  try { claims = await extractDeviceFromRequest(req, Deno.env.get("DEVICE_JWT_SECRET")!); }
   catch { return new Response("unauthorized", { status: 401 }); }
 
   const body = await req.json().catch(() => ({}));
