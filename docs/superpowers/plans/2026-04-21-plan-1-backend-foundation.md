@@ -2719,6 +2719,16 @@ git add supabase/functions/devices-config supabase/functions/tests/config.test.t
 git commit -m "feat(fn): devices-config endpoint with ETag/304 caching"
 ```
 
+### Review findings deferred to post-cluster hardening sweep (after Task 25)
+
+Post-implementation code-quality review flagged three Important issues to address before Plan 1 merges. Deferred to a unified "devices endpoints hardening" sweep rather than a per-task 23b/24b/25b, because the same patterns recur across the whole cluster:
+
+1. **Version-hash non-determinism under `effective_at` ties** (correctness). `dayparting_rules.effective_at` defaults to `now()`, so a bulk insert of rules in one transaction produces tied timestamps and row-order-indeterminate results from `.order("effective_at", descending)`. Symptom: spurious 304→200 flips and bandwidth churn. Fix: add `.order("id", { ascending: true })` as a stable tiebreaker in the rules query.
+2. **`DEVICE_JWT_SECRET` loudness inconsistency** (operability). Tasks 23/24/25 all inline `Deno.env.get("DEVICE_JWT_SECRET")!`. Pairing-claim (20b) and devices-refresh (22b) have an explicit loud check at entry. A missing secret today triggers a 401 flood (the JWT verify fails and the try/catch swallows), looking like bad device tokens rather than a config error — a 2am-pager misdiagnosis trap. Fix: add the same loud check to all three device endpoints.
+3. **`(dev as any).stores.timezone` cast** (convention). Task 22b introduced `unwrap<T>` precisely to avoid `any`. The plan itself uses `any`, so the drift is plan-template-wide. Fix: narrow the cast to `(dev as { stores: { timezone: string } })` in all device endpoints that do the embed, and amend the plan text for future tasks that copy the pattern.
+
+The hardening sweep will be written after Task 25's review, as a combined Task "25b" (or "devices-cluster-hardening") that collapses fixes 1, 2, 3 across all three endpoints into one commit pair (plan doc + code fix), mirroring the 18b/20b/22b pattern. Minor items from the review (documentation docblock, payload-contract comment, `uuid-safe interpolation` note) will ride along.
+
 ---
 
 ## Task 24: Edge Function — `devices-heartbeat`
