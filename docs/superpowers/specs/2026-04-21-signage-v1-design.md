@@ -288,26 +288,24 @@ CREATE INDEX ON pairing_requests (expires_at);
 }
 ```
 
-### RLS policies (sketch)
+### RLS policies + device access (refined during Plan 1 writing)
 
-Two principal types, two policy styles:
+Two principal types, two enforcement styles:
+
+**Humans:** RLS policies on every tenant-scoped table, enforced by Postgres:
 
 ```sql
--- Human access (on every tenant-scoped table)
 CREATE POLICY human_tenant_access ON <table>
   USING (
     tenant_id IN (
       SELECT tenant_id FROM tenant_members WHERE user_id = auth.uid()
     )
   );
-
--- Device access (read-only on content; write on own heartbeat/cache_status)
-CREATE POLICY device_tenant_access ON <table>
-  USING (
-    tenant_id = (current_setting('request.jwt.claims', true)::jsonb->>'tenant_id')::uuid
-    AND current_setting('request.jwt.claims', true)::jsonb->>'role' = 'device'
-  );
 ```
+
+**Devices:** NOT routed through RLS. Device-facing Edge Functions verify the device JWT manually (signature + `devices.revoked_at IS NULL` check), extract `device_id` + `tenant_id`, then use the **service-role** Supabase client with explicit `WHERE tenant_id = <claim>` filtering. Rationale: Supabase's RLS model is anchored to `auth.uid()` / `auth.users`; fitting a non-human principal into it requires creating synthetic auth-user rows or doing custom `SET LOCAL` acrobatics. A cleaner separation is: humans → RLS; machines → service-role with application-layer tenant enforcement in a small number of audited Edge Functions.
+
+Security properties are identical (cross-tenant reads impossible), and the attack surface is smaller (a handful of reviewed functions, not every table).
 
 Device JWT claims: `{sub: device_id, tenant_id, role: 'device', iat, exp}`. Access tokens only; refresh tokens validated separately at `/refresh` endpoint.
 
