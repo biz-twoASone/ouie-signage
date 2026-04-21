@@ -35,10 +35,13 @@ Deno.serve(async (req) => {
   // Paired. Drain the pickup bundle (one-time).
   if (data.tv_pickup) {
     await svc.from("pairing_requests").update({ tv_pickup: null }).eq("code", code);
+    const { access_token, refresh_token, expires_in } = data.tv_pickup;
     return Response.json({
       status: "paired",
       device_id: data.claimed_device_id,
-      ...data.tv_pickup,
+      access_token,
+      refresh_token,
+      expires_in,
     });
   }
   // Already picked up once; second read gets just the device_id:

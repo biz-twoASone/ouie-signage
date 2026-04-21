@@ -91,12 +91,25 @@ Deno.serve(async (req) => {
 
   // Link claim → device AND stash the pickup bundle for the TV to drain via
   // pairing-status. The dashboard never sees the raw tokens.
-  await svc.from("pairing_requests")
+  const { error: linkErr } = await svc.from("pairing_requests")
     .update({
       claimed_device_id: device.id,
       tv_pickup: { access_token: accessToken, refresh_token: refresh, expires_in: ttl },
     })
     .eq("code", code);
+  if (linkErr) {
+    // Best-effort cleanup: delete the just-inserted device row and release the claim
+    // so the original TV can retry. Log any cleanup failures — this is the only
+    // path that surfaces them.
+    const { error: delErr } = await svc.from("devices").delete().eq("id", device.id);
+    if (delErr) console.error("pairing-claim cleanup: device delete failed", delErr);
+    const { error: relErr } = await svc.from("pairing_requests")
+      .update({ claimed_at: null })
+      .eq("code", code)
+      .is("claimed_device_id", null);
+    if (relErr) console.error("pairing-claim cleanup: claim release failed", relErr);
+    return new Response("db: " + linkErr.message, { status: 500 });
+  }
 
   return Response.json({
     device_id: device.id,
