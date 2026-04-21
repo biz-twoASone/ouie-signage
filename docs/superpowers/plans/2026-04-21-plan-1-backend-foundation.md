@@ -1045,6 +1045,37 @@ git commit -m "test(db): CRITICAL cross-tenant RLS isolation coverage"
 
 ---
 
+## Task 15b: Extend RLS isolation coverage (reparent + join-tables + lockdown)
+
+**Why this exists:** Code-review follow-up to Task 15. The 12-assertion base test catches direct `tenant_id` policy failures (missing WITH CHECK on INSERT, missing RLS flag, overly-permissive USING). It does NOT catch:
+- **UPDATE-reparent attacks**: user A updates their own row and sets `tenant_id = tenantB`. USING never blocks this (the row IS visible to A); only WITH CHECK rejects the new value. The #1 policy-refactor regression path.
+- **EXISTS-subquery policies** on `playlist_items` and `device_group_members` — a different, harder-to-write policy shape not exercised by any direct-table assertion.
+- **Zero-policy lockdown drift** on `pairing_requests` — if a future dev adds an accidental permissive policy, no test fails.
+
+**File modified:** `supabase/tests/rls_isolation.test.sql`
+
+**Changes:**
+- `plan(12)` → `plan(16)`
+- Setup: seed 2 `media` rows + 2 `playlist_items` rows (one per tenant) + 1 `pairing_requests` row.
+- New assertion (user A context): `throws_ok` UPDATE-reparent attempt, expects SQLSTATE `42501`.
+- New assertion (user A context): `count(playlist_items) = 1` — EXISTS policy.
+- New assertion (user A context): `count(pairing_requests) = 0` — empty-policy lockdown.
+- New assertion (user B context): `count(playlist_items) = 1` — confirms B-side of the EXISTS policy.
+
+**Verify:**
+```bash
+supabase test db
+```
+Expected: 34 cumulative tests pass (14 schema + 4 constraints + 16 RLS isolation).
+
+**Commit:**
+```bash
+git add supabase/tests/rls_isolation.test.sql docs/superpowers/plans/2026-04-21-plan-1-backend-foundation.md
+git commit -m "test(db): extend RLS isolation (reparent + join-tables + lockdown)"
+```
+
+---
+
 ## Task 16: Shared Edge Function module — JWT utilities
 
 **Files:**
