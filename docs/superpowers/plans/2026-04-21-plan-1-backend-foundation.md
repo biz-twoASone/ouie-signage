@@ -2919,6 +2919,59 @@ git add supabase/migrations/20260421001500_cache_events.sql supabase/functions/d
 git commit -m "feat(fn): devices-cache-status + cache_events log"
 ```
 
+### Review findings added to post-cluster hardening sweep
+
+Task 25 review added two more items to the sweep scope:
+
+6. **Test is row-count-only — no field verification.** The test asserts `length >= 1` after insert, but doesn't verify `state`, `message`, `media_id`, `device_id`, or `tenant_id` landed in the right columns. A column-swap regression (e.g., `media_id: claims.tenant_id`) would still produce `length >= 1`. Fix: add `assertEquals(row.state, "cached"); assertEquals(row.message, "initial"); assertEquals(row.media_id, null); assertEquals(row.device_id, creds.device_id);` after the select.
+7. **`e.message?.slice(0, 500)` throws on non-string truthy values.** Optional chaining handles undefined, but `42.slice` is a TypeError surfaced as an un-annotated 500. Plan text is the source; fix must update BOTH plan spec (line ~2905 in this file) AND code. Pattern: `message: typeof e.message === "string" ? e.message.slice(0, 500) : null`.
+8. **Invalid `state` enum values produce 500 instead of 400.** EF doesn't validate state before INSERT; DB CHECK rejects → 500 "db: new row violates check constraint". Exposes schema to caller and poisons server-error alerting. Fix: validate state ∈ {cached, failed, evicted, preloaded} in the EF, 400 on mismatch.
+
+Sweep now covers: Task 23 (I1 hash tiebreaker, I2 cast style, I3 loud env), Task 24 (#4 test strengthening, #5 revoked_at filter), Task 25 (#6 test strengthening, #7 message robustness + plan edit, #8 state validation + 400). Plus the uniform loud-env treatment across all three device endpoints.
+
+---
+
+## Task 25b: Post-cluster hardening sweep
+
+Mirrors the 18b/20b/22b pattern. Applies ALL deferred findings from Tasks 23, 24, 25 in one commit. Scope:
+
+**`supabase/functions/devices-config/index.ts`:**
+- Add loud `DEVICE_JWT_SECRET` check at entry (immediately after method guard), above any DB calls: `const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET"); if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");`. Pass `jwtSecret` into `extractDeviceFromRequest(..., jwtSecret)` instead of the inline `!` assertion.
+- Narrow the `(dev as any).stores.timezone` cast to `(dev as { stores: { timezone: string } }).stores.timezone`.
+- Add `.order("id", { ascending: true })` after the existing `.order("effective_at", { ascending: false })` on the `dayparting_rules` query, as a stable tiebreaker for hash determinism.
+- Optional minor comment at the `updated_at` participation and the uuid-safe interpolation.
+
+**`supabase/functions/devices-heartbeat/index.ts`:**
+- Add the same loud `DEVICE_JWT_SECRET` check.
+- Add `.is("revoked_at", null)` to the UPDATE chain so a revoked device's heartbeat no-ops: `.eq("id", claims.sub).is("revoked_at", null)`.
+
+**`supabase/functions/devices-cache-status/index.ts`:**
+- Add the same loud `DEVICE_JWT_SECRET` check.
+- Add EF-level state validation before INSERT:
+  ```ts
+  const VALID_STATES = ["cached", "failed", "evicted", "preloaded"] as const;
+  // ... inside the map or as a pre-loop guard:
+  for (const e of body.events) {
+    if (!VALID_STATES.includes(e.state)) {
+      return new Response("invalid state", { status: 400 });
+    }
+  }
+  ```
+- Harden `message` slicing: `message: typeof e.message === "string" ? e.message.slice(0, 500) : null`.
+
+**`supabase/functions/tests/heartbeat.test.ts`:**
+- After the 204 assertion, add a service-role re-fetch of the device row and assert `cache_storage_info` deep-equals the posted object and `last_seen_at` is non-null.
+
+**`supabase/functions/tests/cache_status.test.ts`:**
+- After the `length >= 1` assertion, destructure the first row and assert field-level: `state === "cached"`, `message === "initial"`, `media_id === null`, `device_id === creds.device_id`.
+
+**Plan text (this file):**
+- Update Task 25 Step 3 code block (line ~2905) so `message` slicing is typeof-guarded, preventing future implementers from copy-pasting the bug back in.
+
+**Run full suite:** `deno test --allow-net --allow-env supabase/functions/tests/` — expect `ok | 20 passed` (test count unchanged; assertions tightened).
+
+**Commit:** `fix(fn): devices-endpoints hardening sweep (loud env, revoked filter, state validation, test strengthening)`
+
 ---
 
 ## Task 26: Shared FCM sender + `devices-sync-now`
