@@ -431,3 +431,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/devices-heartbeat/deno.json"
 entrypoint = "./functions/devices-heartbeat/index.ts"
+
+[functions.devices-cache-status]
+enabled = true
+verify_jwt = false
+import_map = "./functions/devices-cache-status/deno.json"
+entrypoint = "./functions/devices-cache-status/index.ts"
