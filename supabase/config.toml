@@ -437,3 +437,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/devices-cache-status/deno.json"
 entrypoint = "./functions/devices-cache-status/index.ts"
+
+[functions.devices-sync-now]
+enabled = true
+verify_jwt = false
+import_map = "./functions/devices-sync-now/deno.json"
+entrypoint = "./functions/devices-sync-now/index.ts"
