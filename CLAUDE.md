@@ -1,6 +1,6 @@
 # Smart TV Signage — project notes
 
-**Status (as of 2026-04-21):** Mid-execution of Plan 1 (backend foundation). 11 of 27 tasks complete at last checkpoint.
+**Status (as of 2026-04-21):** Mid-execution of Plan 1 (backend foundation). 22 of 27 tasks complete; up next is Task 23 (`devices-config` with ETag).
 
 ## Do not re-brainstorm
 
@@ -32,6 +32,7 @@ Before doing anything in this project:
 - **RLS is for humans only.** Device endpoints go through Edge Functions using the Supabase service-role client with explicit `WHERE tenant_id = <claim>` filtering. Do NOT add RLS policies for device roles — that approach was considered and rejected during spec refinement.
 - **No placeholders, no TODOs.** If you catch yourself about to write `// TODO: implement later`, stop and either finish it or escalate to the user.
 - **TDD for non-trivial Edge Functions.** Migration tasks are not TDD (the schema SQL is itself the spec); Edge Function tasks write Deno tests first, implement, run tests, commit.
+- **Edge runtime does not hot-reload.** After editing any `supabase/functions/**/*.ts` file while `supabase functions serve` is already running, the container serves the old code until restarted. Run `docker restart supabase_edge_runtime_smart-tv-video-viewer` (or kill + re-run `supabase functions serve --env-file .env.local`) before re-running Deno tests — otherwise a "fix" appears not to take effect.
 
 ## Stack summary (one-liner for fresh Claude)
 
