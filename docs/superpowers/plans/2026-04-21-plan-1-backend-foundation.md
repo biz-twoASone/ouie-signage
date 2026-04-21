@@ -1853,6 +1853,155 @@ git commit -m "feat(fn): pairing-claim — binds code to store and issues device
 
 ---
 
+## Task 20b: Harden pairing-claim — atomic CAS on code claim + loud DEVICE_JWT_SECRET
+
+**Why this exists:** Code reviewer of Task 20 flagged two items that shouldn't propagate into Tasks 21–26:
+1. **Critical — TOCTOU race on pairing_requests.** Between the `if (pr.claimed_at)` check and the `update({claimed_at})` write, two concurrent POSTs with the same code can both pass the check, both insert `devices` rows, and both mint valid device JWTs from one pairing code. The second device row has `claimed_device_id` unset (last-writer-wins), leaving an orphaned access+refresh token pair fully functional for the full TTL. Credential-issuance paths need atomic single-shot semantics.
+2. **Important regression — `Deno.env.get(...)!` on `DEVICE_JWT_SECRET`.** If the secret is unset in prod, HMAC signs with an empty key and the function crashes with a cryptic "Key length is zero" or silently emits invalid tokens. Task 18b established the "throw loudly on missing env" pattern for exactly this class of failure; Task 20 regressed it.
+
+**Files:**
+- Modify: `supabase/functions/pairing-claim/index.ts`
+
+- [ ] **Step 1: Harden the env-var read and switch to atomic CAS claim**
+
+Replace the pairing_requests validation block (the `const { data: pr, error: prErr } ...` select through the `if (new Date(pr.expires_at) < new Date())` check) AND the trailing `update({ claimed_at: now, claimed_device_id: device.id })` block AND the JWT secret read.
+
+The full new `index.ts` body becomes:
+
+```ts
+// supabase/functions/pairing-claim/index.ts
+import { serviceRoleClient } from "../_shared/supabase.ts";
+import { mintDeviceAccessToken, generateRefreshToken, hashRefreshToken } from "../_shared/jwt.ts";
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return new Response("method", { status: 405 });
+
+  const jwtSecret = Deno.env.get("DEVICE_JWT_SECRET");
+  if (!jwtSecret) throw new Error("DEVICE_JWT_SECRET must be set");
+
+  // Require Supabase auth header (user JWT)
+  const userJwt = req.headers.get("Authorization")?.replace(/^Bearer /, "");
+  if (!userJwt) return new Response("unauthenticated", { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const { code, store_id, name } = body;
+  if (!code || !store_id || !name) return new Response("bad request", { status: 400 });
+
+  // Use a user-scoped client so RLS enforces "this user actually owns the store":
+  const userClient = (await import("https://esm.sh/@supabase/supabase-js@2.45.0"))
+    .createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: `Bearer ${userJwt}` } }, auth: { persistSession: false } },
+    );
+
+  // RLS-checked fetch of the store (proves the user has access to it):
+  const { data: store, error: storeErr } = await userClient
+    .from("stores").select("id, tenant_id").eq("id", store_id).single();
+  if (storeErr || !store) return new Response("forbidden", { status: 403 });
+
+  // Now use service role for pairing bookkeeping (the pairing row is not accessible by RLS):
+  const svc = serviceRoleClient();
+
+  const now = new Date().toISOString();
+
+  // Atomic claim: UPDATE ... WHERE code=X AND claimed_at IS NULL AND expires_at > now.
+  // Returns the row iff this request won the race; null otherwise. This collapses the
+  // previous check-then-update TOCTOU into one SQL statement.
+  const { data: claimed, error: claimErr } = await svc
+    .from("pairing_requests")
+    .update({ claimed_at: now })
+    .eq("code", code)
+    .is("claimed_at", null)
+    .gt("expires_at", now)
+    .select("code")
+    .maybeSingle();
+  if (claimErr) return new Response("db: " + claimErr.message, { status: 500 });
+  if (!claimed) {
+    // Disambiguate missing/claimed/expired for UX (this is the cold path):
+    const { data: pr } = await svc
+      .from("pairing_requests")
+      .select("claimed_at, expires_at")
+      .eq("code", code)
+      .maybeSingle();
+    if (!pr) return new Response("code not found", { status: 404 });
+    if (pr.claimed_at) return new Response("already claimed", { status: 409 });
+    return new Response("expired", { status: 410 });
+  }
+
+  // Create device:
+  const refresh = generateRefreshToken();
+  const refreshHash = await hashRefreshToken(refresh);
+
+  const { data: device, error: devErr } = await svc.from("devices").insert({
+    tenant_id: store.tenant_id,
+    store_id: store.id,
+    name: String(name).slice(0, 80),
+    pairing_code: code,
+    paired_at: now,
+    refresh_token_hash: refreshHash,
+    refresh_token_issued_at: now,
+  }).select("id").single();
+  if (devErr) {
+    // Roll back the pairing_requests claim so the original TV can retry:
+    await svc.from("pairing_requests")
+      .update({ claimed_at: null })
+      .eq("code", code)
+      .is("claimed_device_id", null);
+    return new Response("db: " + devErr.message, { status: 500 });
+  }
+
+  // Link claim → device (a second UPDATE because we claimed before knowing device.id):
+  await svc.from("pairing_requests")
+    .update({ claimed_device_id: device.id })
+    .eq("code", code);
+
+  const ttl = 3600;
+  const accessToken = await mintDeviceAccessToken({
+    deviceId: device.id,
+    tenantId: store.tenant_id,
+    ttlSeconds: ttl,
+    secret: jwtSecret,
+  });
+
+  return Response.json({
+    device_id: device.id,
+    access_token: accessToken,
+    refresh_token: refresh,
+    expires_in: ttl,
+  });
+});
+```
+
+Key changes vs. Task 20:
+- `DEVICE_JWT_SECRET` is read once at the top and throws loudly if unset (matches Task 18b pattern).
+- The old check-then-update on pairing_requests is replaced with a single atomic UPDATE guarded by `claimed_at IS NULL AND expires_at > now`.
+- On the cold (race-lost / missing / expired) path, a disambiguating SELECT produces the correct 404/409/410 status for UX.
+- Device insert now comes AFTER the claim reservation. If the device insert fails, we roll back the claim (`claimed_at = null`) so the original TV can retry.
+- A trailing second UPDATE sets `claimed_device_id` once we know it (required because we claim before the insert).
+
+- [ ] **Step 2: Re-run the integration test**
+
+```bash
+supabase functions serve --env-file .env.local &
+# wait for "Serving functions"
+eval "$(supabase status -o env)" && \
+  export SUPABASE_URL=http://127.0.0.1:54321 \
+         SUPABASE_ANON_KEY="$ANON_KEY" \
+         SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" && \
+  deno test --allow-net --allow-env supabase/functions/tests/pairing_claim.test.ts
+```
+Expected: `ok | 1 passed`. The existing happy-path test still exercises the refactored flow end-to-end.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/pairing-claim/index.ts
+git commit -m "fix(fn): atomic CAS on pairing_requests claim + loud DEVICE_JWT_SECRET check"
+```
+
+---
+
 ## Task 21: Edge Function — `pairing-status`
 
 TV polls this while showing the code. Returns `pending` until the dashboard claims it, then `paired` with the device's tokens.
