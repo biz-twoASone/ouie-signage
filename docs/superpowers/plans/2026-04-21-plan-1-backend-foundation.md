@@ -2100,7 +2100,7 @@ Deno.serve(async (req) => {
 
 Migration:
 ```sql
--- supabase/migrations/20260421001300_pairing_tv_pickup.sql
+-- supabase/migrations/20260421001400_pairing_tv_pickup.sql
 ALTER TABLE pairing_requests ADD COLUMN tv_pickup jsonb;
 ```
 Apply: `supabase db reset`.
@@ -2158,7 +2158,7 @@ Both should pass. Note: `pairing_claim.test.ts` now receives `device_id` only fr
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260421001300_pairing_tv_pickup.sql supabase/functions/pairing-status supabase/functions/pairing-claim supabase/functions/tests/pairing_status.test.ts supabase/functions/tests/pairing_claim.test.ts
+git add supabase/migrations/20260421001400_pairing_tv_pickup.sql supabase/functions/pairing-status supabase/functions/pairing-claim supabase/functions/tests/pairing_status.test.ts supabase/functions/tests/pairing_claim.test.ts
 git commit -m "feat(fn): pairing-status with one-time TV token pickup"
 ```
 
