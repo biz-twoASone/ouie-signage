@@ -21,6 +21,14 @@ class AppStateHolder {
         _state.value = AppState.Error(kind)
     }
 
+    /**
+     * NOTE: Does NOT clear persisted tokens. If a caller is recovering from [AppState.ErrorKind.TokensInvalid],
+     * tokens must be cleared separately (e.g., via `TokenStore.clear()`) — otherwise cold-start will reload
+     * the stale tokens and re-enter `Running`, causing a 401→refresh→TokensInvalid loop.
+     * Today, [com.ouie.signage.net.TokenAuthenticator] clears tokens inside its refresh-failure path,
+     * so the `TokensInvalid` path already comes in token-free. Plan 3b callers that emit `TokensInvalid`
+     * directly must uphold that invariant themselves.
+     */
     fun recoverToPairing() {
         _state.value = AppState.Pairing
     }
