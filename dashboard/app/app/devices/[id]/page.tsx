@@ -6,18 +6,19 @@ import { renameDevice, deleteDevice } from "@/lib/actions/devices";
 import { Button } from "@/components/ui/button";
 import { SyncNowButton } from "@/components/sync-now-button";
 import { syncNow } from "@/lib/actions/devices";
+import { AssignPlaylistForm } from "@/components/assign-playlist-form";
+import { assignFallbackPlaylist } from "@/lib/actions/devices";
 
 export default async function DeviceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: device } = await supabase
-    .from("devices")
-    .select(`
+  const [{ data: device }, { data: playlists }] = await Promise.all([
+    supabase.from("devices").select(`
       id, name, store_id, last_seen_at, fcm_token, fallback_playlist_id,
       cache_storage_info, stores(name, timezone)
-    `)
-    .eq("id", id)
-    .maybeSingle();
+    `).eq("id", id).maybeSingle(),
+    supabase.from("playlists").select("id, name").order("name"),
+  ]);
   if (!device) notFound();
 
   async function rename(name: string) {
@@ -27,6 +28,10 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ i
   async function remove() {
     "use server";
     await deleteDevice(id);
+  }
+  async function assign(playlistId: string | null) {
+    "use server";
+    return await assignFallbackPlaylist(id, playlistId);
   }
 
   const cache = device.cache_storage_info as {
@@ -63,6 +68,11 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ i
         "use server";
         return await syncNow(id);
       }} />
+
+      <section className="border rounded p-4 space-y-2">
+        <h2 className="font-medium">Playlist assignment</h2>
+        <AssignPlaylistForm current={device.fallback_playlist_id} playlists={playlists ?? []} onSubmit={assign} />
+      </section>
 
       <RenameDeviceForm initialName={device.name} onSubmit={rename} />
 

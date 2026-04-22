@@ -72,3 +72,14 @@ export async function syncNow(deviceId: string) {
   }
   return { ok: true };
 }
+
+export async function assignFallbackPlaylist(deviceId: string, playlistId: string | null) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("devices")
+    .update({ fallback_playlist_id: playlistId })
+    .eq("id", deviceId);
+  if (error) return { error: error.message };
+  revalidatePath(`/app/devices/${deviceId}`);
+  revalidatePath("/app/devices");
+  revalidatePath("/app");
+}
