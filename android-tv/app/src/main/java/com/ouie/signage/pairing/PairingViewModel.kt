@@ -1,6 +1,7 @@
 // android-tv/app/src/main/java/com/ouie/signage/pairing/PairingViewModel.kt
 package com.ouie.signage.pairing
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ouie.signage.auth.TokenSource
@@ -50,12 +51,13 @@ class PairingViewModel(
 
     private suspend fun loop() {
         while (true) {
-            _ui.value = UiState(isRequesting = true)
+            _ui.value = UiState(isRequesting = true, message = _ui.value.message)
             val code = try {
                 repo.requestCode()
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
+                Log.w(TAG, "requestCode failed", t)
                 appState.toError(AppState.ErrorKind.ServerUnavailable)
                 return
             }
@@ -64,6 +66,7 @@ class PairingViewModel(
                 expiresAtIso = code.expiresAtIso,
                 secondsUntilExpiry = secondsUntil(code.expiresAtIso),
                 isRequesting = false,
+                message = null,
             )
 
             when (val result = repo.observeClaim(code.code)) {
@@ -78,6 +81,7 @@ class PairingViewModel(
                     // loop — request a new code
                 }
                 is PairingRepository.ClaimResult.Error -> {
+                    Log.w(TAG, "observeClaim failed", result.cause)
                     appState.toError(AppState.ErrorKind.NetworkUnavailable)
                     return
                 }
@@ -89,4 +93,8 @@ class PairingViewModel(
     private fun secondsUntil(iso: String): Int =
         ((Instant.parse(iso).toEpochMilli() - System.currentTimeMillis()) / 1000).toInt()
             .coerceAtLeast(0)
+
+    companion object {
+        private const val TAG = "PairingViewModel"
+    }
 }
