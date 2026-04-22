@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { requestUploadUrl, finalizeMedia } from "@/lib/actions/media";
 
 async function sha256Hex(blob: Blob): Promise<string> {

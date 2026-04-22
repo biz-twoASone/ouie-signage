@@ -78,18 +78,18 @@ export function DaypartingRuleForm({ initial, devices, groups, playlists, onSubm
             <input type="radio" name="target_type" value="device"
               checked={targetType === "device"}
               onChange={() => setTargetType("device")} />
-            Single device
+            Single screen
           </label>
           <label className="flex gap-1 items-center">
             <input type="radio" name="target_type" value="device_group"
               checked={targetType === "device_group"}
               onChange={() => setTargetType("device_group")} />
-            Device group
+            Screen group
           </label>
         </div>
         <select name="target_id" defaultValue={initial?.target_id ?? ""}
           className="border rounded h-10 w-full px-3" required>
-          <option value="">Select a {targetType === "device" ? "device" : "group"}…</option>
+          <option value="">Select a {targetType === "device" ? "screen" : "group"}…</option>
           {(targetType === "device" ? devices : groups).map(t =>
             <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>

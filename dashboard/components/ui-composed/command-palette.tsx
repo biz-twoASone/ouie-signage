@@ -16,7 +16,7 @@ import {
   Home,
   Monitor,
   MapPin,
-  Image,
+  Image as ImageIcon,
   ListMusic,
   Users,
   Clock,
@@ -62,7 +62,7 @@ export function CommandPalette() {
             <MapPin className="mr-2 h-4 w-4" /> {copy.locations}
           </CommandItem>
           <CommandItem onSelect={() => run(() => router.push("/app/media"))}>
-            <Image className="mr-2 h-4 w-4" /> {copy.media}
+            <ImageIcon className="mr-2 h-4 w-4" /> {copy.media}
           </CommandItem>
           <CommandItem onSelect={() => run(() => router.push("/app/playlists"))}>
             <ListMusic className="mr-2 h-4 w-4" /> {copy.playlists}

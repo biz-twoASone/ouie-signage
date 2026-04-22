@@ -20,6 +20,7 @@ export default async function DashboardHome() {
     supabase.from("playlists").select("id, name, playlist_items(id)"),
   ]);
 
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const online = (screens ?? []).filter(
     (s) => s.last_seen_at && now - new Date(s.last_seen_at).getTime() < OFFLINE_MS

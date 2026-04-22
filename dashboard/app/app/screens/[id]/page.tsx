@@ -33,6 +33,7 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
 
   const online =
     !!device.last_seen_at &&
+    // eslint-disable-next-line react-hooks/purity
     Date.now() - new Date(device.last_seen_at).getTime() < OFFLINE_MS;
 
   const storeName = (device.stores as unknown as { name: string } | null)?.name;

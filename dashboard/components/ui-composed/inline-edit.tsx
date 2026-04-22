@@ -29,6 +29,9 @@ export function InlineEdit({
   }, [editing]);
 
   useEffect(() => {
+    // Sync external prop into local draft when the parent re-renders with a
+    // new value (e.g., after server-action mutates the stored name).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(value);
   }, [value]);
 

@@ -56,7 +56,7 @@ async function fetchLatestMagicLink(
   );
 }
 
-export default async function globalSetup(_config: FullConfig) {
+export default async function globalSetup(_config: FullConfig) { // eslint-disable-line @typescript-eslint/no-unused-vars
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
 
   const browser = await chromium.launch();
