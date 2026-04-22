@@ -74,18 +74,20 @@ export function MediaUploader() {
   }
 
   return (
-    <div className="border rounded p-4 space-y-3">
-      <h2 className="font-medium">Upload media</h2>
+    <div className="border-border rounded-lg border p-4 space-y-3" data-testid="media-uploader">
+      <h2 className="text-sm font-medium">Upload media</h2>
+      <p className="text-muted-foreground text-xs">Accepts JPEG, PNG, and MP4 files.</p>
       <input
         ref={fileRef}
         type="file"
         accept="video/mp4,image/jpeg,image/png"
+        className="text-sm"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) handleUpload(f);
         }}
       />
-      {status && <p className="text-sm text-muted-foreground">{status}</p>}
+      {status && <p className="text-muted-foreground text-sm">{status}</p>}
       {progress > 0 && progress < 100 && <progress value={progress} max={100} className="w-full" />}
     </div>
   );
