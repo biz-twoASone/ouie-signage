@@ -1,8 +1,9 @@
 // supabase/functions/alerts-device-offline/index.ts
-// Runs every 5 min via pg_cron. Finds devices whose last_seen_at is older than
-// 30 minutes AND whose tenant owner hasn't already been alerted in the last
-// hour, then sends one digest email per tenant via Brevo. Idempotent per
-// 1h window via the `alert_events` table.
+// Runs every 5 min via pg_cron. For each tenant that has opted in to alerts
+// (alerts_enabled=true), finds devices whose last_seen_at is older than the
+// tenant's configured threshold, dedup-checks the last hour of alert_events,
+// then sends one digest email via Brevo to the tenant's configured recipient
+// (fallback: owner auth email). Idempotent per 1h window.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -12,6 +13,13 @@ type Device = {
   last_seen_at: string | null;
   tenant_id: string;
   stores: { name: string } | { name: string }[] | null;
+};
+
+type TenantCfg = {
+  id: string;
+  alerts_enabled: boolean;
+  alert_offline_threshold_minutes: number;
+  alert_recipient_email: string | null;
 };
 
 Deno.serve(async () => {
@@ -26,69 +34,79 @@ Deno.serve(async () => {
 
   const sb = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-
-  // Offline devices grouped by tenant. `.lt()` excludes NULL last_seen_at so
-  // never-heartbeated devices don't alert.
-  const { data: rows, error } = await sb.from("devices")
-    .select("id, name, last_seen_at, tenant_id, stores(name)")
-    .lt("last_seen_at", cutoff);
-  if (error) {
-    console.error("query devices:", error);
+  const { data: tenants, error: tErr } = await sb
+    .from("tenants")
+    .select("id, alerts_enabled, alert_offline_threshold_minutes, alert_recipient_email")
+    .eq("alerts_enabled", true);
+  if (tErr) {
+    console.error("query tenants:", tErr);
     return new Response("query failed", { status: 500 });
   }
 
-  const devices = (rows ?? []) as unknown as Device[];
-  const byTenant = new Map<string, Device[]>();
-  for (const r of devices) {
-    const arr = byTenant.get(r.tenant_id) ?? [];
-    arr.push(r);
-    byTenant.set(r.tenant_id, arr);
-  }
-
   let sent = 0;
-  for (const [tenantId, tenantDevices] of byTenant) {
-    // Dedup: was an offline alert for this tenant sent within the last hour?
+  for (const tenant of (tenants ?? []) as TenantCfg[]) {
+    const cutoff = new Date(
+      Date.now() - tenant.alert_offline_threshold_minutes * 60 * 1000,
+    ).toISOString();
+
+    const { data: rows, error } = await sb
+      .from("devices")
+      .select("id, name, last_seen_at, tenant_id, stores(name)")
+      .eq("tenant_id", tenant.id)
+      .lt("last_seen_at", cutoff);
+    if (error) {
+      console.error(`query devices tenant=${tenant.id}:`, error);
+      continue;
+    }
+    const offline = (rows ?? []) as unknown as Device[];
+    if (offline.length === 0) continue;
+
+    // 1h dedup per tenant/kind.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { data: recent } = await sb.from("alert_events")
+    const { data: recent } = await sb
+      .from("alert_events")
       .select("id")
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", tenant.id)
       .eq("kind", "device_offline")
       .gt("created_at", oneHourAgo)
       .limit(1)
       .maybeSingle();
     if (recent) continue;
 
-    // Tenant owner email.
-    const { data: members } = await sb.from("tenant_members")
-      .select("user_id")
-      .eq("tenant_id", tenantId)
-      .eq("role", "owner")
-      .limit(1);
-    const userId = members?.[0]?.user_id;
-    if (!userId) continue;
-
-    const { data: user } = await sb.auth.admin.getUserById(userId);
-    const toEmail = user.user?.email;
+    let toEmail = tenant.alert_recipient_email;
+    if (!toEmail) {
+      const { data: members } = await sb
+        .from("tenant_members")
+        .select("user_id")
+        .eq("tenant_id", tenant.id)
+        .eq("role", "owner")
+        .limit(1);
+      const userId = members?.[0]?.user_id;
+      if (!userId) continue;
+      const { data: user } = await sb.auth.admin.getUserById(userId);
+      toEmail = user.user?.email ?? null;
+    }
     if (!toEmail) continue;
 
     const storeName = (d: Device): string => {
       const s = d.stores;
       if (!s) return "?";
-      // PostgREST joined relation may be single object or array; handle both.
       if (Array.isArray(s)) return s[0]?.name ?? "?";
       return s.name ?? "?";
     };
 
-    const deviceList = tenantDevices.map(d =>
-      `<li><b>${d.name}</b> (${storeName(d)}) — last seen ${d.last_seen_at ?? "never"}</li>`
-    ).join("");
-    const htmlContent = `<p>The following TVs have not reported in over 30 minutes:</p><ul>${deviceList}</ul><p>Log into the dashboard to investigate.</p>`;
+    const deviceList = offline
+      .map(
+        (d) =>
+          `<li><b>${d.name}</b> (${storeName(d)}) — last seen ${d.last_seen_at ?? "never"}</li>`,
+      )
+      .join("");
+    const htmlContent = `<p>The following TVs have not reported in over ${tenant.alert_offline_threshold_minutes} minutes:</p><ul>${deviceList}</ul><p>Log into the dashboard to investigate.</p>`;
 
     const brevoBody = {
       sender: { email: fromEmail, name: fromName },
       to: [{ email: toEmail }],
-      subject: `${tenantDevices.length} TV${tenantDevices.length === 1 ? "" : "s"} offline > 30 min`,
+      subject: `${offline.length} TV${offline.length === 1 ? "" : "s"} offline > ${tenant.alert_offline_threshold_minutes} min`,
       htmlContent,
     };
 
@@ -104,13 +122,16 @@ Deno.serve(async () => {
       console.error(`brevo ${toEmail}: ${res.status} ${await res.text()}`);
       continue;
     }
-    // Drain Brevo's response body to avoid Deno resource leak warnings.
     await res.body?.cancel();
 
     await sb.from("alert_events").insert({
-      tenant_id: tenantId,
+      tenant_id: tenant.id,
       kind: "device_offline",
-      payload: { device_ids: tenantDevices.map(d => d.id) },
+      payload: {
+        device_ids: offline.map((d) => d.id),
+        threshold_minutes: tenant.alert_offline_threshold_minutes,
+        recipient: toEmail,
+      },
     });
     sent++;
   }
