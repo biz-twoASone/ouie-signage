@@ -4,15 +4,21 @@
 // tenant's configured threshold, dedup-checks the last hour of alert_events,
 // then sends one digest email via Brevo to the tenant's configured recipient
 // (fallback: owner auth email). Idempotent per 1h window.
+//
+// Uptime-rule gate (Plan 2.2): only devices that are currently within at least
+// one expected-on window (screen_uptime_rules) generate an alert. Devices with
+// no applicable rule are silent by default.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isInWindow } from "../_shared/schedule.ts";
 
 type Device = {
   id: string;
   name: string;
   last_seen_at: string | null;
   tenant_id: string;
-  stores: { name: string } | { name: string }[] | null;
+  store_id: string | null;
+  stores: { name: string; timezone: string } | { name: string; timezone: string }[] | null;
 };
 
 type TenantCfg = {
@@ -51,14 +57,57 @@ Deno.serve(async () => {
 
     const { data: rows, error } = await sb
       .from("devices")
-      .select("id, name, last_seen_at, tenant_id, stores(name)")
+      .select("id, name, last_seen_at, tenant_id, store_id, stores(name, timezone)")
       .eq("tenant_id", tenant.id)
       .lt("last_seen_at", cutoff);
     if (error) {
       console.error(`query devices tenant=${tenant.id}:`, error);
       continue;
     }
-    const offline = (rows ?? []) as unknown as Device[];
+    const candidates = (rows ?? []) as unknown as Device[];
+    if (candidates.length === 0) continue;
+
+    // Fetch uptime rules for this tenant (both device-level and group-level).
+    const { data: allRules } = await sb
+      .from("screen_uptime_rules")
+      .select("target_device_id, target_device_group_id, days_of_week, start_time, end_time")
+      .eq("tenant_id", tenant.id);
+
+    // Fetch group memberships (device_id → group_id[]).
+    // device_group_members has no tenant_id column; scoping via .in("device_id", candidates)
+    // is safe because candidates is already tenant-scoped from the devices query above.
+    const { data: memberships } = await sb
+      .from("device_group_members")
+      .select("device_id, device_group_id")
+      .in("device_id", candidates.map((d) => d.id));
+    const deviceToGroups = new Map<string, string[]>();
+    for (const m of memberships ?? []) {
+      const arr = deviceToGroups.get(m.device_id) ?? [];
+      arr.push(m.device_group_id);
+      deviceToGroups.set(m.device_id, arr);
+    }
+
+    // Filter candidates to those currently within an expected-on window.
+    // Devices with no store timezone or no applicable rule are silent (default-silent).
+    const now = new Date();
+    const offline = candidates.filter((d) => {
+      const tz = Array.isArray(d.stores) ? d.stores[0]?.timezone : d.stores?.timezone;
+      if (!tz) return false; // no store/timezone → cannot evaluate → silent
+
+      const deviceRules = (allRules ?? []).filter((r) => r.target_device_id === d.id);
+      const rulesToCheck = deviceRules.length > 0
+        ? deviceRules
+        : (allRules ?? []).filter((r) => {
+            if (!r.target_device_group_id) return false;
+            const groups = deviceToGroups.get(d.id) ?? [];
+            return groups.includes(r.target_device_group_id);
+          });
+
+      return rulesToCheck.some((r) =>
+        isInWindow(now, tz, r.days_of_week, r.start_time as string, r.end_time as string),
+      );
+    });
+
     if (offline.length === 0) continue;
 
     // 1h dedup per tenant/kind.
