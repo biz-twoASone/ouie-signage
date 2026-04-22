@@ -1151,8 +1151,9 @@ class TokenAuthenticatorTest {
         ).execute()
 
         assertEquals(200, response.code)
-        assertEquals("Bearer new", server.takeRequest(); server.takeRequest().getHeader("Authorization"))
-        // Note: consume the first request above; assertion is on the retry.
+        server.takeRequest()                       // drain the initial (401-inducing) request
+        val retry = server.takeRequest()
+        assertEquals("Bearer new", retry.getHeader("Authorization"))
     }
 
     @Test
@@ -1192,7 +1193,7 @@ class TokenAuthenticatorTest {
         val tokenStore = FakeTokenStore(
             initial = DeviceTokens("old", "rt1", "dev-1", 3600),
         )
-        val refreshAdapter = FakeRefreshAdapter { throw RefreshFailedException() }
+        val refreshAdapter = FakeRefreshAdapter { throw RuntimeException("refresh failed") }
         val authenticator = TokenAuthenticator(tokenStore, refreshAdapter)
         val client = OkHttpClient.Builder()
             .addInterceptor(AuthInterceptor(tokenStore))
@@ -1221,8 +1222,6 @@ private class FakeRefreshAdapter(
 ) : RefreshAdapter {
     override suspend fun refresh(current: DeviceTokens): DeviceTokens = produce()
 }
-
-class RefreshFailedException : Exception()
 ```
 
 Note: the test uses a `FakeTokenStore` which stands in for the real `TokenStore`. The production classes `AuthInterceptor` and `TokenAuthenticator` must accept a common interface, not the concrete `TokenStore` — this is why Step 2 below introduces a `TokenSource` interface.
