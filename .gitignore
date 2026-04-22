@@ -37,3 +37,6 @@ yarn-debug.log*
 
 # Playwright MCP session artifacts (snapshots, console logs)
 .playwright-mcp/
+
+# Firebase
+android-tv/app/google-services.json
