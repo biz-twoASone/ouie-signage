@@ -9,13 +9,19 @@ import { renameDevice, deleteDevice, syncNow, assignFallbackPlaylist } from "@/l
 import { SyncNowButton } from "@/components/sync-now-button";
 import { AssignPlaylistForm } from "@/components/assign-playlist-form";
 import { DeleteScreenButton } from "./delete-screen-button";
+import { UptimeRulesSection, type UptimeRule } from "@/components/uptime-rules-section";
 
 const OFFLINE_MS = 5 * 60 * 1000;
 
 export default async function ScreenDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: device }, { data: playlists }, { data: recentCache }] = await Promise.all([
+  const [
+    { data: device },
+    { data: playlists },
+    { data: recentCache },
+    { data: uptimeRules },
+  ] = await Promise.all([
     supabase.from("devices").select(`
       id, name, store_id, last_seen_at, fcm_token, fallback_playlist_id,
       cache_storage_info, current_app_version, current_playlist_id,
@@ -28,6 +34,10 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       .eq("device_id", id)
       .order("created_at", { ascending: false })
       .limit(10),
+    supabase.from("screen_uptime_rules")
+      .select("id, days_of_week, start_time, end_time")
+      .eq("target_device_id", id)
+      .order("start_time"),
   ]);
   if (!device) notFound();
 
@@ -139,6 +149,11 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
           />
         </CardContent>
       </Card>
+
+      <UptimeRulesSection
+        rules={(uptimeRules ?? []) as UptimeRule[]}
+        target={{ device_id: id }}
+      />
 
       <Card className="border-destructive/50">
         <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>
