@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Signage Player</string>
+    <string name="pairing_title">Pair this TV</string>
+    <string name="pairing_instructions">Enter this code in your dashboard:</string>
+    <string name="pairing_code_expires_in">Code expires in %1$d seconds</string>
+    <string name="pairing_waiting">Waiting for pairing…</string>
+    <string name="running_placeholder">Paired. Waiting for content…</string>
+    <string name="error_generic">Something went wrong</string>
+    <string name="error_retry_in">Retrying in %1$d s</string>
+</resources>
