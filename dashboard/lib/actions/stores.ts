@@ -61,3 +61,16 @@ export async function deleteStore(id: string) {
   revalidatePath("/app/stores");
   redirect("/app/stores");
 }
+
+export async function assignPlaylistToAllDevicesInStore(
+  storeId: string, playlistId: string | null,
+) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("devices")
+    .update({ fallback_playlist_id: playlistId })
+    .eq("store_id", storeId);
+  if (error) return { error: error.message };
+  revalidatePath("/app/stores");
+  revalidatePath(`/app/stores/${storeId}`);
+  revalidatePath("/app/devices");
+}
