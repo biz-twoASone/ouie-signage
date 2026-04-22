@@ -1,10 +1,10 @@
 import { test, expect } from "./fixtures";
 
-test("create, rename, and delete a location (currently /app/stores)", async ({ authedPage }) => {
+test("create, rename, and delete a location", async ({ authedPage }) => {
   const original = `E2E Location ${Date.now()}`;
   const renamed = `${original} renamed`;
 
-  await authedPage.goto("/app/stores");
+  await authedPage.goto("/app/locations");
   await authedPage.getByRole("link", { name: /new store/i }).click();
 
   // StoreForm has 4 required fields; Name empty, others pre-filled with defaults.
@@ -14,16 +14,16 @@ test("create, rename, and delete a location (currently /app/stores)", async ({ a
 
   // Rename round-trip
   await authedPage.getByText(original).click();
-  await expect(authedPage).toHaveURL(/\/app\/stores\/[0-9a-f-]+$/);
+  await expect(authedPage).toHaveURL(/\/app\/locations\/[0-9a-f-]+$/);
   await authedPage.getByLabel(/^name$/i).fill(renamed);
   await authedPage.getByRole("button", { name: /save store/i }).click();
-  await expect(authedPage).toHaveURL(/\/app\/stores$/);
+  await expect(authedPage).toHaveURL(/\/app\/locations$/);
   await expect(authedPage.getByText(renamed)).toBeVisible();
   await expect(authedPage.getByText(original, { exact: true })).toHaveCount(0);
 
   // Delete
   await authedPage.getByText(renamed).click();
   await authedPage.getByRole("button", { name: /delete store/i }).click();
-  await expect(authedPage).toHaveURL(/\/app\/stores$/);
+  await expect(authedPage).toHaveURL(/\/app\/locations$/);
   await expect(authedPage.getByText(renamed)).not.toBeVisible();
 });
