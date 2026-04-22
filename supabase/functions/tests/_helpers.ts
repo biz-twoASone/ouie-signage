@@ -69,16 +69,16 @@ export async function pairDevice(): Promise<PairedDeviceCreds> {
   const userId = createUserRes.user?.id;
   if (!userId) throw new Error("pairDevice: admin.createUser: user is null");
 
-  const tenant = unwrap<{ id: string }>(
-    await svc.from("tenants").insert({ name: "T" }).select().single(),
-    "insert tenants",
+  // The on_auth_user_created trigger auto-creates a tenant + tenant_members row
+  // for each new user (owner role). Read the trigger-created tenant_id rather
+  // than inserting a second one — inserting again would leave the user with
+  // two tenant_members rows and break any caller that assumes one-tenant-per-user
+  // (e.g. media-upload-url's .maybeSingle() lookup).
+  const bootstrap = unwrap<{ tenant_id: string }>(
+    await svc.from("tenant_members").select("tenant_id").eq("user_id", userId).single(),
+    "select auto-bootstrapped tenant_members",
   );
-
-  unwrap<{ tenant_id: string }>(
-    await svc.from("tenant_members").insert({ tenant_id: tenant.id, user_id: userId }).select()
-      .single(),
-    "insert tenant_members",
-  );
+  const tenant = { id: bootstrap.tenant_id };
 
   const store = unwrap<{ id: string }>(
     await svc.from("stores").insert({ tenant_id: tenant.id, name: "S" }).select().single(),
