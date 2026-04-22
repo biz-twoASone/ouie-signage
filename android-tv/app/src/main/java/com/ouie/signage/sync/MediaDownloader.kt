@@ -11,39 +11,30 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 
-/**
- * Downloads one media blob to disk with sha256 verification. Operates on the
- * shared OkHttp — any 401 path is handled by TokenAuthenticator (not that R2
- * signed URLs return 401; they return 403 on invalidation, so we treat both
- * 4xx and 5xx as NetworkError).
- *
- * Flow:
- *   1. GET url, stream response body to <cache>/media/<id>.<ext>.part
- *   2. sha256 the temp file
- *   3. On match: atomic-rename to <cache>/media/<id>.<ext>, return Success
- *   4. On mismatch: delete temp, return ChecksumMismatch
- *
- * The coroutine runs network+disk I/O on Dispatchers.IO. Caller (MediaSyncWorker)
- * is expected to serialize calls — spec §6.2 mandates one download at a time so
- * we don't thrash weak WiFi.
- */
 class MediaDownloader(
     private val httpClient: OkHttpClient,
     val layout: CacheLayout,
+    /**
+     * Pre-download hook that gets a chance to free enough disk space. Returns
+     * `true` if the caller can safely proceed, `false` to skip the download.
+     */
+    private val ensureSpace: (bytes: Long) -> Boolean = { true },
 ) {
 
     sealed interface Result {
         data object Success : Result
+        data object InsufficientSpace : Result
         data class ChecksumMismatch(val expected: String, val actual: String) : Result
         data class NetworkError(val code: Int?, val cause: Throwable?) : Result
     }
 
     suspend fun download(media: MediaDto, expectedExt: String): Result = withContext(Dispatchers.IO) {
+        if (!ensureSpace(media.size_bytes)) return@withContext Result.InsufficientSpace
+
         layout.mediaDir().mkdirs()
         val temp = layout.tempFile(media.id, expectedExt)
         val dest = layout.mediaFile(media.id, expectedExt)
 
-        // Clean up any stale partial from a previous attempt.
         if (temp.exists()) temp.delete()
 
         val response = try {
@@ -59,9 +50,7 @@ class MediaDownloader(
             val body = resp.body ?: return@withContext Result.NetworkError(resp.code, null)
             try {
                 body.byteStream().use { input ->
-                    temp.outputStream().use { output ->
-                        input.copyTo(output, bufferSize = 64 * 1024)
-                    }
+                    temp.outputStream().use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
                 }
             } catch (e: CancellationException) {
                 temp.delete()
@@ -78,10 +67,8 @@ class MediaDownloader(
             return@withContext Result.ChecksumMismatch(expected = media.checksum, actual = actualHash)
         }
 
-        // Atomic rename within the same directory = same-volume move.
         if (dest.exists()) dest.delete()
         if (!temp.renameTo(dest)) {
-            // Extremely rare — fall back to copy + delete.
             temp.copyTo(dest, overwrite = true)
             temp.delete()
         }
