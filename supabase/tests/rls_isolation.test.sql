@@ -4,10 +4,19 @@ BEGIN;
 SELECT plan(16);
 
 -- Setup: two tenants, two users, one member each.
+-- session_replication_role = replica suppresses user-defined triggers for this
+-- session so that seeding auth.users doesn't fire the tenant-bootstrap trigger
+-- and pollute the count assertions below. Using this instead of ALTER TABLE
+-- DISABLE TRIGGER because auth.users is owned by supabase_auth_admin, not
+-- postgres (the test role), so DISABLE/ENABLE would error on ownership.
+SET session_replication_role = replica;
+
 INSERT INTO auth.users (id, email, raw_app_meta_data, raw_user_meta_data, aud, role)
 VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'a@test', '{}', '{}', 'authenticated', 'authenticated'),
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'b@test', '{}', '{}', 'authenticated', 'authenticated');
+
+SET session_replication_role = origin;
 
 INSERT INTO tenants (id, name) VALUES
   ('11111111-1111-1111-1111-111111111111', 'Tenant A'),
