@@ -3,9 +3,12 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 
-type Props = { onClick: () => Promise<{ ok?: boolean; error?: string }> };
+type Props = {
+  onClick: () => Promise<{ ok?: boolean; error?: string }>;
+  "data-testid"?: string;
+};
 
-export function SyncNowButton({ onClick }: Props) {
+export function SyncNowButton({ onClick, "data-testid": testid }: Props) {
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -14,6 +17,7 @@ export function SyncNowButton({ onClick }: Props) {
       <Button
         variant="outline"
         disabled={pending}
+        data-testid={testid}
         onClick={() => {
           setMsg(null);
           start(async () => {

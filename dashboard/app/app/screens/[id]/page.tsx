@@ -1,15 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
-import { DeviceStatusBadge } from "@/components/device-status-badge";
-import { RenameDeviceForm } from "@/components/rename-device-form";
-import { renameDevice, deleteDevice } from "@/lib/actions/devices";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui-composed/page-header";
+import { StatusPill } from "@/components/ui-composed/status-pill";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InlineEdit } from "@/components/ui-composed/inline-edit";
+import { copy } from "@/lib/copy";
+import { renameDevice, deleteDevice, syncNow, assignFallbackPlaylist } from "@/lib/actions/devices";
 import { SyncNowButton } from "@/components/sync-now-button";
-import { syncNow } from "@/lib/actions/devices";
 import { AssignPlaylistForm } from "@/components/assign-playlist-form";
-import { assignFallbackPlaylist } from "@/lib/actions/devices";
+import { DeleteScreenButton } from "./delete-screen-button";
 
-export default async function DeviceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+const OFFLINE_MS = 5 * 60 * 1000;
+
+export default async function ScreenDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
   const [{ data: device }, { data: playlists }, { data: recentCache }] = await Promise.all([
@@ -28,9 +31,15 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ i
   ]);
   if (!device) notFound();
 
+  const online =
+    !!device.last_seen_at &&
+    Date.now() - new Date(device.last_seen_at).getTime() < OFFLINE_MS;
+
+  const storeName = (device.stores as unknown as { name: string } | null)?.name;
+
   async function rename(name: string) {
     "use server";
-    return await renameDevice(id, name);
+    await renameDevice(id, name);
   }
   async function remove() {
     "use server";
@@ -46,74 +55,96 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ i
   } | null;
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-semibold">{device.name}</h1>
-          <p className="text-muted-foreground text-sm">
-            {(device.stores as unknown as { name: string } | null)?.name}
-          </p>
-        </div>
-        <DeviceStatusBadge
-          last_seen_at={device.last_seen_at}
-          clock_skew_seconds={device.clock_skew_seconds_from_server}
-        />
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        title={
+          <InlineEdit value={device.name} onSave={rename} data-testid="screen-detail-name" />
+        }
+        description={storeName ? `${copy.location}: ${storeName}` : ""}
+        primaryAction={
+          <SyncNowButton
+            data-testid="screen-detail-sync-now"
+            onClick={async () => {
+              "use server";
+              return await syncNow(id);
+            }}
+          />
+        }
+      />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Status</CardTitle></CardHeader>
+          <CardContent>
+            <StatusPill
+              variant={online ? "online" : "offline"}
+              timestamp={device.last_seen_at ? new Date(device.last_seen_at).toLocaleTimeString() : undefined}
+              data-testid="screen-detail-status"
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">App version</CardTitle></CardHeader>
+          <CardContent className="text-muted-foreground font-mono text-sm">
+            {device.current_app_version ?? "—"}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Clock skew</CardTitle></CardHeader>
+          <CardContent className="text-muted-foreground font-mono text-sm">
+            {device.clock_skew_seconds_from_server ?? 0}s
+          </CardContent>
+        </Card>
       </div>
 
-      <section className="border rounded p-4 space-y-2 text-sm">
-        <div><span className="text-muted-foreground">Last seen: </span>{device.last_seen_at ?? "never"}</div>
-        {cache && (
-          <div>
-            <span className="text-muted-foreground">Cache storage: </span>
+      {cache && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Cache storage</CardTitle></CardHeader>
+          <CardContent className="text-sm">
             {cache.root ?? "?"} ({cache.filesystem ?? "?"}) —
             {" "}{Math.round((cache.free_bytes ?? 0) / 1e9)} GB free
             {" / "}{Math.round((cache.total_bytes ?? 0) / 1e9)} GB total
-          </div>
-        )}
-        {device.current_app_version && (
-          <div><span className="text-muted-foreground">App version: </span>{device.current_app_version}</div>
-        )}
-        {device.last_config_version_applied && (
-          <div><span className="text-muted-foreground">Config version: </span>{device.last_config_version_applied}</div>
-        )}
-        {device.clock_skew_seconds_from_server !== null && device.clock_skew_seconds_from_server !== undefined && (
-          <div><span className="text-muted-foreground">Clock skew: </span>{device.clock_skew_seconds_from_server}s</div>
-        )}
-      </section>
+          </CardContent>
+        </Card>
+      )}
 
-      <section className="border rounded p-4 space-y-2 text-sm">
-        <h2 className="font-medium">Recent cache events</h2>
-        {(!recentCache || recentCache.length === 0) ? (
-          <p className="text-muted-foreground">No recent events.</p>
-        ) : (
-          <ul className="space-y-1">
-            {recentCache.map((e, i) => (
-              <li key={i} className="text-xs">
-                <span className="text-muted-foreground">{e.created_at} </span>
-                <span className="font-mono">{e.state}</span>
-                {e.media_id && <span> · media {e.media_id.slice(0, 8)}…</span>}
-                {e.message && <span> · {e.message}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Recent cache events</CardTitle></CardHeader>
+        <CardContent>
+          {(!recentCache || recentCache.length === 0) ? (
+            <p className="text-muted-foreground text-sm">No recent events.</p>
+          ) : (
+            <ul className="space-y-1">
+              {recentCache.map((e, i) => (
+                <li key={i} className="text-xs">
+                  <span className="text-muted-foreground">{e.created_at} </span>
+                  <span className="font-mono">{e.state}</span>
+                  {e.media_id && <span> · media {e.media_id.slice(0, 8)}…</span>}
+                  {e.message && <span> · {e.message}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
-      <SyncNowButton onClick={async () => {
-        "use server";
-        return await syncNow(id);
-      }} />
+      <Card>
+        <CardHeader><CardTitle className="text-base">Playlist assignment</CardTitle></CardHeader>
+        <CardContent>
+          <AssignPlaylistForm
+            current={device.fallback_playlist_id}
+            playlists={playlists ?? []}
+            onSubmit={assign}
+          />
+        </CardContent>
+      </Card>
 
-      <section className="border rounded p-4 space-y-2">
-        <h2 className="font-medium">Playlist assignment</h2>
-        <AssignPlaylistForm current={device.fallback_playlist_id} playlists={playlists ?? []} onSubmit={assign} />
-      </section>
-
-      <RenameDeviceForm initialName={device.name} onSubmit={rename} />
-
-      <form action={remove}>
-        <Button type="submit" variant="destructive">Delete device</Button>
-      </form>
+      <Card className="border-destructive/50">
+        <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>
+        <CardContent>
+          <DeleteScreenButton onConfirm={remove} screenName={device.name} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
