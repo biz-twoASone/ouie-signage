@@ -1,6 +1,8 @@
 # Smart TV Signage — project notes
 
-**Status (as of 2026-04-21):** **Plan 1 complete.** All 27 tasks committed; 23/23 Deno integration tests pass; pgtap (schema + constraints + RLS isolation) PASS. Local E2E green. Next: write Plan 2 (Next.js dashboard) via `superpowers:writing-plans` — but only when the user says go. Pre-Plan-2 loose end: deploy Plan 1 artifacts to the remote Supabase project (see Post-Plan checks at the bottom of the plan file).
+**Status (as of 2026-04-22):** **Plan 1 complete. Plan 2 mid-execution.** Plan 2 written as `docs/superpowers/plans/2026-04-21-plan-2-dashboard.md` and executing task-by-task on branch `feature/plan-2-dashboard`. Batch A (Tasks 1–7: pnpm workspace, Next.js scaffold, shadcn/ui, Supabase SSR, magic-link login, tenant bootstrap trigger, app shell) is **done**, verified via Playwright E2E click-through — magic-link login works end-to-end, tenant auto-provisions, shell renders. Next: Batch B (Tasks 8–11: stores, pairing, devices list/detail, Sync Now), then pause for remote Supabase deploy (Plan 1 migrations + Plan 2's tenant trigger) before Batch C. Pre-Plan-2 loose end still open: remote Supabase project hasn't received any migrations yet.
+
+**Stack divergences from Plan 2 text, accepted by user on 2026-04-21:** scaffolder produced Next.js 16 / React 19 / Tailwind v4 instead of 15/18/v3. Decision: stay on current stack; keep `middleware.ts` (not `proxy.ts`) for Plan 2 duration; translate Tailwind v3 config references to CSS-first `@theme` edits in `dashboard/app/globals.css`; `toast` became `sonner` (shadcn 4.4.0 forced). See memory `project_plan2_stack_divergence.md`.
 
 ## Do not re-brainstorm
 
