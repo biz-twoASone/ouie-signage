@@ -16,3 +16,21 @@ test("screens list page renders", async ({ authedPage }) => {
   // Page loaded without an auth redirect.
   await expect(authedPage).toHaveURL(/\/app\/devices$/);
 });
+
+// Sync Now requires a seeded paired device with an FCM token. Skipped until
+// the fixture is extended to pair a device via the pairing-request Edge
+// Function as a test-setup step. Current smoke-only tenant is empty.
+test.skip("Sync Now button triggers FCM push and returns 202", async ({ authedPage }) => {
+  await authedPage.goto("/app/devices");
+  const firstScreenLink = authedPage.getByRole("link").first();
+  await firstScreenLink.click();
+
+  const [resp] = await Promise.all([
+    authedPage.waitForResponse(
+      (r) => r.url().includes("sync-now") && r.request().method() === "POST",
+    ),
+    authedPage.getByRole("button", { name: /sync now/i }).click(),
+  ]);
+
+  expect(resp.status()).toBe(202);
+});
