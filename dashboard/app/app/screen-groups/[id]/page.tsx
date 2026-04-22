@@ -2,8 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { GroupMembersEditor } from "@/components/group-members-editor";
 import { setGroupMembers, renameGroup, deleteGroup } from "@/lib/actions/device-groups";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui-composed/page-header";
+import { InlineEdit } from "@/components/ui-composed/inline-edit";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeleteGroupButton } from "./delete-group-button";
+import { copy } from "@/lib/copy";
 
 export default async function GroupDetailPage(
   { params }: { params: Promise<{ id: string }> },
@@ -18,9 +21,9 @@ export default async function GroupDetailPage(
   ]);
   if (!group) notFound();
 
-  async function rename(fd: FormData) {
+  async function rename(name: string) {
     "use server";
-    await renameGroup(id, String(fd.get("name") ?? ""));
+    await renameGroup(id, name);
   }
   async function remove() {
     "use server";
@@ -39,20 +42,27 @@ export default async function GroupDetailPage(
   }));
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <form action={rename} className="flex gap-2">
-        <Input name="name" defaultValue={group.name} required />
-        <Button type="submit">Rename</Button>
-      </form>
+    <div className="max-w-2xl space-y-6">
+      <PageHeader
+        title={
+          <InlineEdit value={group.name} onSave={rename} data-testid="group-detail-name" />
+        }
+        description={`${memberIds.length} ${copy.screens.toLowerCase()} in this group.`}
+      />
 
-      <section className="border rounded p-4 space-y-2">
-        <h2 className="font-medium">Members</h2>
-        <GroupMembersEditor allDevices={devices} currentMemberIds={memberIds} onSubmit={save} />
-      </section>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Members</CardTitle></CardHeader>
+        <CardContent>
+          <GroupMembersEditor allDevices={devices} currentMemberIds={memberIds} onSubmit={save} />
+        </CardContent>
+      </Card>
 
-      <form action={remove}>
-        <Button type="submit" variant="destructive">Delete group</Button>
-      </form>
+      <Card className="border-destructive/50">
+        <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>
+        <CardContent>
+          <DeleteGroupButton onConfirm={remove} groupName={group.name} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
