@@ -21,7 +21,7 @@ export default async function StoresPage() {
             <Link href={`/app/stores/${s.id}`} className="flex justify-between">
               <span className="font-medium">{s.name}</span>
               <span className="text-sm text-muted-foreground">
-                {s.timezone} · sync {s.sync_window_start}–{s.sync_window_end}
+                {s.timezone} · sync {s.sync_window_start.slice(0, 5)}–{s.sync_window_end.slice(0, 5)}
               </span>
             </Link>
           </li>
