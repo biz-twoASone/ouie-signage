@@ -5,7 +5,7 @@ test("create, rename, and delete a location", async ({ authedPage }) => {
   const renamed = `${original} renamed`;
 
   await authedPage.goto("/app/locations");
-  await authedPage.getByRole("link", { name: /add location/i }).click();
+  await authedPage.getByTestId("locations-add-button").click();
 
   // StoreForm has 4 required fields; Name empty, others pre-filled with defaults.
   await authedPage.getByLabel(/^name$/i).fill(original);
