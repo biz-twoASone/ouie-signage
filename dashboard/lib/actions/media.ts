@@ -45,9 +45,28 @@ export async function finalizeMedia(input: {
 
 export async function deleteMedia(id: string) {
   const supabase = await createClient();
-  // NOTE: this deletes the DB row; the R2 object becomes orphaned. A periodic
-  // cleanup job (v1.1+) can sweep orphans. Acceptable at 8-device scale for v1.
-  const { error } = await supabase.from("media").delete().eq("id", id);
-  if (error) return { error: error.message };
+  // Look up r2_path under RLS first — confirms the user owns the row and gives
+  // us the key to delete from R2.
+  const { data: row, error: selErr } = await supabase
+    .from("media")
+    .select("r2_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (selErr) return { error: selErr.message };
+  if (!row) return { error: "Not found." };
+
+  // DB delete first. If R2 delete fails we've only created an orphan (same
+  // outcome as the pre-fix behavior); if we reversed the order a transient R2
+  // failure would leave a row pointing to nothing → playback 404s.
+  const { error: delErr } = await supabase.from("media").delete().eq("id", id);
+  if (delErr) return { error: delErr.message };
+
+  try {
+    const { r2Delete } = await import("@/lib/r2");
+    await r2Delete(row.r2_path);
+  } catch (e) {
+    console.error("r2Delete failed (orphan created):", e);
+  }
+
   revalidatePath("/app/media");
 }
