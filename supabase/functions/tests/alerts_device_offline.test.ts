@@ -49,6 +49,95 @@ Deno.test({
 });
 
 Deno.test({
+  name: "alerts-device-offline: tenant with alerts_enabled=false is skipped",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Opt this tenant OUT of alerts.
+    await svc.from("tenants").update({ alerts_enabled: false }).eq("id", creds.tenant_id);
+
+    // Backdate the device so it WOULD be offline if alerts were enabled.
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    // No alert_events row for the opted-out tenant.
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id)
+      .eq("kind", "device_offline");
+    assertEquals(events?.length, 0, "opted-out tenant must not receive an alert_events row");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: per-tenant threshold is respected",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Set a 120-minute threshold for this tenant.
+    await svc.from("tenants")
+      .update({ alert_offline_threshold_minutes: 120 })
+      .eq("id", creds.tenant_id);
+
+    // Backdate device 45 min — below the 120-min threshold.
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    // No alert: device was offline for less than threshold.
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id)
+      .eq("kind", "device_offline");
+    assertEquals(events?.length, 0, "device below per-tenant threshold must not trigger");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: alert_recipient_email override is recorded in payload",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    const override = `ops-${Date.now()}@test.local`;
+    await svc.from("tenants")
+      .update({ alert_recipient_email: override })
+      .eq("id", creds.tenant_id);
+
+    // Backdate device to trigger the alert.
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    const { data: events } = await svc.from("alert_events")
+      .select("payload")
+      .eq("tenant_id", creds.tenant_id)
+      .eq("kind", "device_offline");
+    assertEquals(events?.length, 1);
+    const payload = events![0].payload as { recipient?: string };
+    assertEquals(payload.recipient, override, "payload.recipient must reflect override");
+  },
+});
+
+Deno.test({
   name: "alerts-device-offline: skips online devices",
   sanitizeOps: false,
   sanitizeResources: false,
