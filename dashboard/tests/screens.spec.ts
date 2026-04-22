@@ -5,8 +5,8 @@ test("add-screen page renders form (code is entered, not requested here)", async
   // If no locations exist yet, the page shows a "create a location first" CTA
   // instead of the form. Smoke-pass if EITHER renders.
   const form = authedPage.getByRole("textbox", { name: /pairing code/i });
-  const createLocationCta = authedPage.getByRole("link", { name: /create a store/i });
-  await expect(form.or(createLocationCta)).toBeVisible();
+  const addLocationCta = authedPage.getByRole("link", { name: /add location/i });
+  await expect(form.or(addLocationCta)).toBeVisible();
 });
 
 test("screens list page renders", async ({ authedPage }) => {
