@@ -1,10 +1,7 @@
 package com.ouie.signage.net
 
 import com.ouie.signage.auth.DeviceTokens
-import com.ouie.signage.auth.TokenStore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
@@ -30,7 +27,7 @@ class TokenAuthenticatorTest {
     }
 
     @Test
-    fun `401 triggers refresh and retries original request`() = runTest {
+    fun `401 triggers refresh and retries original request`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
 
@@ -98,7 +95,7 @@ class TokenAuthenticatorTest {
     }
 
     @Test
-    fun `refresh 401 clears the token store`() = runTest {
+    fun `refresh 401 clears the token store`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401))
 
         val tokenStore = FakeTokenStore(
@@ -122,7 +119,7 @@ class TokenAuthenticatorTest {
 
 /** Minimal TokenStore stand-in — production uses EncryptedSharedPreferences. */
 private class FakeTokenStore(initial: DeviceTokens?) : com.ouie.signage.auth.TokenSource {
-    private var tokens: DeviceTokens? = initial
+    @Volatile private var tokens: DeviceTokens? = initial
     override fun loadSync(): DeviceTokens? = tokens
     override fun save(tokens: DeviceTokens) { this.tokens = tokens }
     override fun clear() { tokens = null }

@@ -18,7 +18,7 @@ object ApiClient {
 
     /**
      * Shared OkHttp used by both pairing (no auth) and device (auth-required) retrofits.
-     * Caller layers an Authenticator on top for device calls (Task 3.5).
+     * Caller layers an Authenticator on top for device calls (Task 3.4).
      */
     fun baseHttpClient(): OkHttpClient.Builder {
         val logging = HttpLoggingInterceptor().apply {

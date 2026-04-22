@@ -2,6 +2,7 @@
 package com.ouie.signage.net
 
 import com.ouie.signage.auth.TokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,6 +48,8 @@ class TokenAuthenticator(
                     response.request.newBuilder()
                         .header("Authorization", "Bearer ${next.accessToken}")
                         .build()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (t: Throwable) {
                     tokenStore.clear()
                     null

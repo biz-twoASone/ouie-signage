@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
+/** EncryptedSharedPreferences-backed token persistence. File "signage_tokens.xml" is
+ *  excluded from Android auto-backup via res/xml/backup_rules.xml (device-keyed → backup is useless AND a leakage risk). */
 class TokenStore(context: Context) : TokenSource {
 
     private val masterKey = MasterKey.Builder(context)
