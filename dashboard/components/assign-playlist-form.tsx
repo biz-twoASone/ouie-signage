@@ -34,7 +34,7 @@ export function AssignPlaylistForm({ current, playlists, onSubmit }: Props) {
           <option value="">— none —</option>
           {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <Button type="submit" disabled={pending}>{pending ? "…" : "Save"}</Button>
+        <Button type="submit" disabled={pending}>{pending ? "Assigning…" : "Assign playlist"}</Button>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </form>

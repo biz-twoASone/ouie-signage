@@ -49,11 +49,11 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
         initial={{
           name: store.name,
           timezone: store.timezone,
-          sync_window_start: store.sync_window_start,
-          sync_window_end: store.sync_window_end,
+          sync_window_start: store.sync_window_start.slice(0, 5),
+          sync_window_end: store.sync_window_end.slice(0, 5),
         }}
         onSubmit={save}
-        submitLabel="Save"
+        submitLabel="Save store"
       />
       <section className="border rounded p-4 space-y-2">
         <h2 className="font-medium">Assign playlist to all TVs in this store</h2>
