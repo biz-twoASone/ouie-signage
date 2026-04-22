@@ -34,3 +34,6 @@ yarn-debug.log*
 
 # Supabase local
 .supabase/
+
+# Playwright MCP session artifacts (snapshots, console logs)
+.playwright-mcp/
