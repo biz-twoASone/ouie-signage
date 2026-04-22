@@ -51,3 +51,24 @@ export async function deleteDevice(id: string) {
   revalidatePath("/app/devices");
   redirect("/app/devices");
 }
+
+export async function syncNow(deviceId: string) {
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: "Not signed in." };
+
+  const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/devices-sync-now`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ device_id: deviceId }),
+  });
+  if (res.status !== 202) {
+    const text = await res.text();
+    return { error: `Sync failed: ${res.status} ${text}` };
+  }
+  return { ok: true };
+}

@@ -4,6 +4,8 @@ import { DeviceStatusBadge } from "@/components/device-status-badge";
 import { RenameDeviceForm } from "@/components/rename-device-form";
 import { renameDevice, deleteDevice } from "@/lib/actions/devices";
 import { Button } from "@/components/ui/button";
+import { SyncNowButton } from "@/components/sync-now-button";
+import { syncNow } from "@/lib/actions/devices";
 
 export default async function DeviceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -56,6 +58,11 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ i
         {/* Extended heartbeat fields (app version, current playlist, config version, clock skew)
             are surfaced in Task 21 once the schema migration adds the columns. */}
       </section>
+
+      <SyncNowButton onClick={async () => {
+        "use server";
+        return await syncNow(id);
+      }} />
 
       <RenameDeviceForm initialName={device.name} onSubmit={rename} />
 
