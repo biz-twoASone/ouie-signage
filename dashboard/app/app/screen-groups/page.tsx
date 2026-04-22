@@ -26,7 +26,7 @@ export default async function GroupsPage() {
       <ul className="space-y-2">
         {(groups ?? []).map(g => (
           <li key={g.id} className="border rounded p-3">
-            <Link href={`/app/device-groups/${g.id}`} className="flex justify-between">
+            <Link href={`/app/screen-groups/${g.id}`} className="flex justify-between">
               <span className="font-medium">{g.name}</span>
               <span className="text-sm text-muted-foreground">
                 {(g.device_group_members as { count: number }[])?.[0]?.count ?? 0} devices

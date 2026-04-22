@@ -13,8 +13,8 @@ export async function createGroup(name: string) {
     .insert({ tenant_id: tm.tenant_id, name: name.trim() })
     .select("id").single();
   if (error) return { error: error.message };
-  revalidatePath("/app/device-groups");
-  redirect(`/app/device-groups/${data.id}`);
+  revalidatePath("/app/screen-groups");
+  redirect(`/app/screen-groups/${data.id}`);
 }
 
 export async function renameGroup(id: string, name: string) {
@@ -22,16 +22,16 @@ export async function renameGroup(id: string, name: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("device_groups").update({ name: name.trim() }).eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/device-groups");
-  revalidatePath(`/app/device-groups/${id}`);
+  revalidatePath("/app/screen-groups");
+  revalidatePath(`/app/screen-groups/${id}`);
 }
 
 export async function deleteGroup(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("device_groups").delete().eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/device-groups");
-  redirect("/app/device-groups");
+  revalidatePath("/app/screen-groups");
+  redirect("/app/screen-groups");
 }
 
 export async function setGroupMembers(groupId: string, deviceIds: string[]) {
@@ -45,6 +45,6 @@ export async function setGroupMembers(groupId: string, deviceIds: string[]) {
       .insert(deviceIds.map(did => ({ device_group_id: groupId, device_id: did })));
     if (insErr) return { error: insErr.message };
   }
-  revalidatePath(`/app/device-groups/${groupId}`);
-  revalidatePath("/app/device-groups");
+  revalidatePath(`/app/screen-groups/${groupId}`);
+  revalidatePath("/app/screen-groups");
 }

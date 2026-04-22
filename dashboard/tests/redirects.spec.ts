@@ -10,7 +10,7 @@ const EXPECTED_REDIRECTS = [
   { from: "/app/device-groups", to: "/app/screen-groups" },
 ];
 
-test.describe.skip("route rename redirects (un-skip in Phase 2)", () => {
+test.describe("route rename redirects", () => {
   for (const { from, to } of EXPECTED_REDIRECTS) {
     test(`${from} → ${to}`, async ({ authedPage }) => {
       const resp = await authedPage.goto(from);

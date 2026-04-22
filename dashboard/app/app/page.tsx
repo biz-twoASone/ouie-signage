@@ -12,7 +12,7 @@ export default async function AppHome() {
       <h1 className="text-2xl font-semibold">Devices</h1>
       {(!devices || devices.length === 0) ? (
         <p className="text-muted-foreground">
-          No devices yet. <a href="/app/devices/pair" className="underline">Pair a TV</a> to get started.
+          No devices yet. <a href="/app/screens/add" className="underline">Pair a TV</a> to get started.
         </p>
       ) : (
         <ul className="space-y-2">

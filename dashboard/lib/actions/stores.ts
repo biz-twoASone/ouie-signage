@@ -34,8 +34,8 @@ export async function createStore(input: StoreInput) {
     sync_window_end: input.sync_window_end,
   });
   if (error) return { error: error.message };
-  revalidatePath("/app/stores");
-  redirect("/app/stores");
+  revalidatePath("/app/locations");
+  redirect("/app/locations");
 }
 
 export async function updateStore(id: string, input: StoreInput) {
@@ -49,17 +49,17 @@ export async function updateStore(id: string, input: StoreInput) {
     sync_window_end: input.sync_window_end,
   }).eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/stores");
-  revalidatePath(`/app/stores/${id}`);
-  redirect("/app/stores");
+  revalidatePath("/app/locations");
+  revalidatePath(`/app/locations/${id}`);
+  redirect("/app/locations");
 }
 
 export async function deleteStore(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("stores").delete().eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/stores");
-  redirect("/app/stores");
+  revalidatePath("/app/locations");
+  redirect("/app/locations");
 }
 
 export async function assignPlaylistToAllDevicesInStore(
@@ -70,7 +70,7 @@ export async function assignPlaylistToAllDevicesInStore(
     .update({ fallback_playlist_id: playlistId })
     .eq("store_id", storeId);
   if (error) return { error: error.message };
-  revalidatePath("/app/stores");
-  revalidatePath(`/app/stores/${storeId}`);
-  revalidatePath("/app/devices");
+  revalidatePath("/app/locations");
+  revalidatePath(`/app/locations/${storeId}`);
+  revalidatePath("/app/screens");
 }

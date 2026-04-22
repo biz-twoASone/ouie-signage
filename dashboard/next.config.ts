@@ -13,7 +13,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, "..", ".env.local") });
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  async redirects() {
+    return [
+      { source: "/app/devices", destination: "/app/screens", permanent: true },
+      { source: "/app/devices/:path*", destination: "/app/screens/:path*", permanent: true },
+      { source: "/app/stores", destination: "/app/locations", permanent: true },
+      { source: "/app/stores/:path*", destination: "/app/locations/:path*", permanent: true },
+      { source: "/app/device-groups", destination: "/app/screen-groups", permanent: true },
+      { source: "/app/device-groups/:path*", destination: "/app/screen-groups/:path*", permanent: true },
+      { source: "/app/screens/pair", destination: "/app/screens/add", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

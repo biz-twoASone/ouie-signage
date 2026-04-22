@@ -31,8 +31,8 @@ export async function claimPairingCode(input: ClaimInput) {
     const text = await res.text();
     return { error: `Pairing failed: ${res.status} ${text}` };
   }
-  revalidatePath("/app/devices");
-  redirect("/app/devices");
+  revalidatePath("/app/screens");
+  redirect("/app/screens");
 }
 
 export async function renameDevice(id: string, name: string) {
@@ -40,16 +40,16 @@ export async function renameDevice(id: string, name: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("devices").update({ name: name.trim() }).eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/devices");
-  revalidatePath(`/app/devices/${id}`);
+  revalidatePath("/app/screens");
+  revalidatePath(`/app/screens/${id}`);
 }
 
 export async function deleteDevice(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("devices").delete().eq("id", id);
   if (error) return { error: error.message };
-  revalidatePath("/app/devices");
-  redirect("/app/devices");
+  revalidatePath("/app/screens");
+  redirect("/app/screens");
 }
 
 export async function syncNow(deviceId: string) {
@@ -79,7 +79,7 @@ export async function assignFallbackPlaylist(deviceId: string, playlistId: strin
     .update({ fallback_playlist_id: playlistId })
     .eq("id", deviceId);
   if (error) return { error: error.message };
-  revalidatePath(`/app/devices/${deviceId}`);
-  revalidatePath("/app/devices");
+  revalidatePath(`/app/screens/${deviceId}`);
+  revalidatePath("/app/screens");
   revalidatePath("/app");
 }

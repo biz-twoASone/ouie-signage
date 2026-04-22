@@ -13,12 +13,12 @@ export default async function StoresPage() {
     <div className="space-y-4">
       <div className="flex justify-between">
         <h1 className="text-2xl font-semibold">Stores</h1>
-        <Button asChild><Link href="/app/stores/new">New store</Link></Button>
+        <Button asChild><Link href="/app/locations/new">New store</Link></Button>
       </div>
       <ul className="space-y-2">
         {(stores ?? []).map((s) => (
           <li key={s.id} className="border rounded p-3">
-            <Link href={`/app/stores/${s.id}`} className="flex justify-between">
+            <Link href={`/app/locations/${s.id}`} className="flex justify-between">
               <span className="font-medium">{s.name}</span>
               <span className="text-sm text-muted-foreground">
                 {s.timezone} · sync {s.sync_window_start.slice(0, 5)}–{s.sync_window_end.slice(0, 5)}

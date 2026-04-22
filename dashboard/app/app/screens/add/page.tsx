@@ -16,7 +16,7 @@ export default async function PairPage() {
     return (
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Pair a TV</h1>
-        <p>You need to <Link href="/app/stores/new" className="underline">create a store</Link> first.</p>
+        <p>You need to <Link href="/app/locations/new" className="underline">create a store</Link> first.</p>
       </div>
     );
   }

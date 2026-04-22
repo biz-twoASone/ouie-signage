@@ -2,9 +2,9 @@ import Link from "next/link";
 
 const items = [
   { href: "/app", label: "Home" },
-  { href: "/app/stores", label: "Stores" },
-  { href: "/app/devices", label: "Devices" },
-  { href: "/app/device-groups", label: "Groups" },
+  { href: "/app/locations", label: "Stores" },
+  { href: "/app/screens", label: "Devices" },
+  { href: "/app/screen-groups", label: "Groups" },
   { href: "/app/media", label: "Media" },
   { href: "/app/playlists", label: "Playlists" },
   { href: "/app/schedules", label: "Schedules" },

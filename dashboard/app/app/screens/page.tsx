@@ -14,12 +14,12 @@ export default async function DevicesPage() {
     <div className="space-y-4">
       <div className="flex justify-between">
         <h1 className="text-2xl font-semibold">Devices</h1>
-        <Button asChild><Link href="/app/devices/pair">Pair a TV</Link></Button>
+        <Button asChild><Link href="/app/screens/add">Pair a TV</Link></Button>
       </div>
       <ul className="space-y-2">
         {(devices ?? []).map((d) => (
           <li key={d.id} className="border rounded p-3">
-            <Link href={`/app/devices/${d.id}`} className="flex justify-between items-center">
+            <Link href={`/app/screens/${d.id}`} className="flex justify-between items-center">
               <span>
                 <span className="font-medium">{d.name}</span>
                 {" · "}
@@ -33,7 +33,7 @@ export default async function DevicesPage() {
         ))}
         {(!devices || devices.length === 0) && (
           <li className="text-muted-foreground">
-            No devices. <Link href="/app/devices/pair" className="underline">Pair a TV</Link> to start.
+            No devices. <Link href="/app/screens/add" className="underline">Pair a TV</Link> to start.
           </li>
         )}
       </ul>
