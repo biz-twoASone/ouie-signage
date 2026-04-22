@@ -101,6 +101,26 @@ class MediaCacheIndex(context: Context, dbFile: File) {
         helper.writableDatabase.delete(TABLE, "media_id = ?", arrayOf(mediaId))
     }
 
+    fun listAll(): List<Entry> {
+        helper.readableDatabase.rawQuery(
+            "SELECT media_id, ext, checksum, size_bytes, cached_at, last_played_at FROM $TABLE",
+            null,
+        ).use { c ->
+            val out = mutableListOf<Entry>()
+            while (c.moveToNext()) {
+                out += Entry(
+                    mediaId = c.getString(0),
+                    ext = c.getString(1),
+                    checksum = c.getString(2),
+                    sizeBytes = c.getLong(3),
+                    cachedAtEpochSeconds = c.getLong(4),
+                    lastPlayedAtEpochSeconds = if (c.isNull(5)) null else c.getLong(5),
+                )
+            }
+            return out
+        }
+    }
+
     private companion object {
         const val DB_VERSION = 1
         const val TABLE = "media_cache"
