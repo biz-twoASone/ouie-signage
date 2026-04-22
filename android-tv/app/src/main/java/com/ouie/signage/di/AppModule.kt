@@ -10,6 +10,7 @@ import com.ouie.signage.net.PairingApi
 import com.ouie.signage.net.RefreshAdapter
 import com.ouie.signage.net.RetrofitRefreshAdapter
 import com.ouie.signage.net.TokenAuthenticator
+import com.ouie.signage.pairing.PairingRepository
 import com.ouie.signage.state.AppStateHolder
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -51,6 +52,10 @@ val appModule = module {
             .build()
     }
 
-    // PairingRepository is written in Task 4.1; uncommented there.
-    // single { PairingRepository(get(), get()) }
+    single {
+        PairingRepository(
+            api = get(),
+            proposedName = android.os.Build.MODEL ?: "Android TV",
+        )
+    }
 }
