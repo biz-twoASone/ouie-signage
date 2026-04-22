@@ -2,11 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { StoreForm } from "@/components/store-form";
 import { updateStore, deleteStore } from "@/lib/actions/stores";
-import { Button } from "@/components/ui/button";
 import { AssignPlaylistForm } from "@/components/assign-playlist-form";
 import { assignPlaylistToAllDevicesInStore } from "@/lib/actions/stores";
+import { PageHeader } from "@/components/ui-composed/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeleteLocationButton } from "./delete-location-button";
+import { copy } from "@/lib/copy";
 
-export default async function EditStorePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: store } = await supabase
@@ -21,7 +24,6 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
     supabase.from("devices").select("id, fallback_playlist_id").eq("store_id", id),
   ]);
 
-  // null if mixed; the single common value if all devices share one; null if none.
   const common: string | null = (() => {
     const ids = new Set((devicesInStore ?? []).map(d => d.fallback_playlist_id));
     return ids.size === 1 ? (devicesInStore?.[0]?.fallback_playlist_id ?? null) : null;
@@ -31,40 +33,55 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
     "use server";
     return await assignPlaylistToAllDevicesInStore(id, playlistId);
   }
-
   async function save(input: Parameters<typeof updateStore>[1]) {
     "use server";
     return await updateStore(id, input);
   }
-
   async function remove() {
     "use server";
     await deleteStore(id);
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Edit store</h1>
-      <StoreForm
-        initial={{
-          name: store.name,
-          timezone: store.timezone,
-          sync_window_start: store.sync_window_start.slice(0, 5),
-          sync_window_end: store.sync_window_end.slice(0, 5),
-        }}
-        onSubmit={save}
-        submitLabel="Save store"
+    <div className="max-w-2xl space-y-6">
+      <PageHeader
+        title={store.name}
+        description={`${copy.location} settings and screen assignments.`}
       />
-      <section className="border rounded p-4 space-y-2">
-        <h2 className="font-medium">Assign playlist to all TVs in this store</h2>
-        <p className="text-sm text-muted-foreground">
-          {devicesInStore?.length ?? 0} devices. {common === null && (devicesInStore?.length ?? 0) > 0 ? "(currently mixed assignments)" : ""}
-        </p>
-        <AssignPlaylistForm current={common} playlists={playlists ?? []} onSubmit={assignAll} />
-      </section>
-      <form action={remove}>
-        <Button type="submit" variant="destructive">Delete store</Button>
-      </form>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
+        <CardContent>
+          <StoreForm
+            initial={{
+              name: store.name,
+              timezone: store.timezone,
+              sync_window_start: store.sync_window_start.slice(0, 5),
+              sync_window_end: store.sync_window_end.slice(0, 5),
+            }}
+            onSubmit={save}
+            submitLabel="Save location"
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Assign playlist to all screens here</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-muted-foreground text-sm">
+            {devicesInStore?.length ?? 0} screens.
+            {common === null && (devicesInStore?.length ?? 0) > 0 ? " Currently mixed assignments." : ""}
+          </p>
+          <AssignPlaylistForm current={common} playlists={playlists ?? []} onSubmit={assignAll} />
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/50">
+        <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>
+        <CardContent>
+          <DeleteLocationButton onConfirm={remove} locationName={store.name} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

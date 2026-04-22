@@ -9,21 +9,22 @@ test("create, rename, and delete a location", async ({ authedPage }) => {
 
   // StoreForm has 4 required fields; Name empty, others pre-filled with defaults.
   await authedPage.getByLabel(/^name$/i).fill(original);
-  await authedPage.getByRole("button", { name: /create store/i }).click();
+  await authedPage.getByRole("button", { name: /add location/i }).click();
   await expect(authedPage.getByText(original)).toBeVisible();
 
   // Rename round-trip
   await authedPage.getByText(original).click();
   await expect(authedPage).toHaveURL(/\/app\/locations\/[0-9a-f-]+$/);
   await authedPage.getByLabel(/^name$/i).fill(renamed);
-  await authedPage.getByRole("button", { name: /save store/i }).click();
+  await authedPage.getByRole("button", { name: /save location/i }).click();
   await expect(authedPage).toHaveURL(/\/app\/locations$/);
   await expect(authedPage.getByText(renamed)).toBeVisible();
   await expect(authedPage.getByText(original, { exact: true })).toHaveCount(0);
 
   // Delete
   await authedPage.getByText(renamed).click();
-  await authedPage.getByRole("button", { name: /delete store/i }).click();
+  await authedPage.getByTestId("location-detail-delete").click();
+  await authedPage.getByTestId("location-detail-delete-dialog-confirm").click();
   await expect(authedPage).toHaveURL(/\/app\/locations$/);
   await expect(authedPage.getByText(renamed)).not.toBeVisible();
 });
