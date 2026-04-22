@@ -1,42 +1,38 @@
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
+import { PageHeader } from "@/components/ui-composed/page-header";
 import { Button } from "@/components/ui/button";
-import { DeviceStatusBadge } from "@/components/device-status-badge";
+import { ScreensTable } from "./screens-table";
+import Link from "next/link";
+import { copy } from "@/lib/copy";
+import { Plus } from "lucide-react";
 
-export default async function DevicesPage() {
+type Screen = {
+  id: string;
+  name: string;
+  last_seen_at: string | null;
+  stores: { name: string } | null;
+};
+
+export default async function ScreensListPage() {
   const supabase = await createClient();
-  const { data: devices } = await supabase
+  const { data } = await supabase
     .from("devices")
-    .select("id, name, last_seen_at, store_id, stores(name)")
+    .select("id, name, last_seen_at, stores(name)")
     .order("name");
-
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between">
-        <h1 className="text-2xl font-semibold">Devices</h1>
-        <Button asChild><Link href="/app/screens/add">Pair a TV</Link></Button>
-      </div>
-      <ul className="space-y-2">
-        {(devices ?? []).map((d) => (
-          <li key={d.id} className="border rounded p-3">
-            <Link href={`/app/screens/${d.id}`} className="flex justify-between items-center">
-              <span>
-                <span className="font-medium">{d.name}</span>
-                {" · "}
-                <span className="text-muted-foreground text-sm">
-                  {(d.stores as unknown as { name: string } | null)?.name}
-                </span>
-              </span>
-              <DeviceStatusBadge last_seen_at={d.last_seen_at} />
+    <div className="space-y-6">
+      <PageHeader
+        title={copy.screens}
+        description="Every TV paired to your workspace."
+        primaryAction={
+          <Button asChild data-testid="screens-add-button">
+            <Link href="/app/screens/add">
+              <Plus className="mr-2 h-4 w-4" /> {copy.addScreen}
             </Link>
-          </li>
-        ))}
-        {(!devices || devices.length === 0) && (
-          <li className="text-muted-foreground">
-            No devices. <Link href="/app/screens/add" className="underline">Pair a TV</Link> to start.
-          </li>
-        )}
-      </ul>
+          </Button>
+        }
+      />
+      <ScreensTable data={(data ?? []) as unknown as Screen[]} />
     </div>
   );
 }
