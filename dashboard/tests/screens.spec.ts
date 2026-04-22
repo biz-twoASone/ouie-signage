@@ -12,7 +12,7 @@ test("pair page renders form (code is entered, not requested here)", async ({ au
 test("screens list page renders", async ({ authedPage }) => {
   await authedPage.goto("/app/devices");
   // Either a list of devices OR an empty-state is acceptable post-auth.
-  await expect(authedPage.locator("main, body")).toBeVisible();
+  await expect(authedPage.locator("body")).toBeVisible();
   // Page loaded without an auth redirect.
   await expect(authedPage).toHaveURL(/\/app\/devices$/);
 });

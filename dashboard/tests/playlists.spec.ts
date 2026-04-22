@@ -11,5 +11,10 @@ test("create a playlist", async ({ authedPage }) => {
   await authedPage.getByPlaceholder(/new playlist name/i).fill(plName);
   await authedPage.getByRole("button", { name: /^create$/i }).click();
 
+  // createPlaylist server action redirects to /app/playlists/{id}.
+  await expect(authedPage).toHaveURL(/\/app\/playlists\/[a-f0-9-]{36}/);
+
+  // Go back to list to confirm it landed.
+  await authedPage.goto("/app/playlists");
   await expect(authedPage.getByRole("link", { name: plName })).toBeVisible();
 });
