@@ -49,7 +49,13 @@ import java.io.File
  */
 class RunningCoordinator(
     private val context: Context,
-    private val authedHttpClient: OkHttpClient,
+    /**
+     * Plain client for R2 presigned-URL media fetches. Must NOT carry a
+     * Bearer Authorization header — R2 treats it as a conflicting auth method
+     * alongside the SigV4 query params and rejects with 400. Kept separate
+     * from the authed client below.
+     */
+    private val downloaderHttpClient: OkHttpClient,
     private val configApi: ConfigApi,
     private val heartbeatApi: HeartbeatApi,
     private val cacheStatusApi: CacheStatusApi,
@@ -98,7 +104,7 @@ class RunningCoordinator(
         val knownIds: List<String> = configRepo.current.value?.media?.map { it.id } ?: emptyList()
         cache.rehydrate(knownIds)
 
-        val downloader = MediaDownloader(authedHttpClient, layout)
+        val downloader = MediaDownloader(downloaderHttpClient, layout)
         val report = CacheStatusReporter(newScope, cacheStatusApi)
         reporter = report
         report.start()

@@ -53,10 +53,14 @@ val appModule = module {
     single { ApiClient.retrofit(get<OkHttpClient>(qualifier = named("authed"))).create(HeartbeatApi::class.java) }
     single { ApiClient.retrofit(get<OkHttpClient>(qualifier = named("authed"))).create(CacheStatusApi::class.java) }
 
+    // Downloader client — plain (no auth). R2 presigned URLs carry their own
+    // SigV4 query params; adding a Bearer header makes R2 reject with 400.
+    single(qualifier = named("downloader")) { ApiClient.baseHttpClient().build() }
+
     single {
         RunningCoordinator(
             context = androidContext(),
-            authedHttpClient = get(qualifier = named("authed")),
+            downloaderHttpClient = get(qualifier = named("downloader")),
             configApi = get(),
             heartbeatApi = get(),
             cacheStatusApi = get(),
