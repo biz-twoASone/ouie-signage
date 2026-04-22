@@ -449,3 +449,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/media-upload-url/deno.json"
 entrypoint = "./functions/media-upload-url/index.ts"
+
+[functions.alerts-device-offline]
+enabled = true
+verify_jwt = false
+import_map = "./functions/alerts-device-offline/deno.json"
+entrypoint = "./functions/alerts-device-offline/index.ts"
