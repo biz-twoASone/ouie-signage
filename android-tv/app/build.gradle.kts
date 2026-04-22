@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.ouie.signage"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.ouie.signage"
         minSdk = 26              // Android TV 8.0 floor; current F&B TVs are newer
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0-3a"
 
