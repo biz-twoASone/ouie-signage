@@ -5,6 +5,10 @@ import com.ouie.signage.net.PairingRequestBody
 import com.ouie.signage.net.PairingRequestResponse
 import com.ouie.signage.net.PairingStatusResponse
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -79,5 +83,36 @@ class PairingRepositoryTest {
         }
         val repo = PairingRepository(api, proposedName = "TV-1", pollIntervalMs = 1)
         assertTrue(repo.observeClaim("ABC234") is PairingRepository.ClaimResult.PickupConsumed)
+    }
+
+    @Test
+    fun `observeClaim returns PickupConsumed when paired status has null tokens`() = runTest {
+        val api = object : PairingApi {
+            override suspend fun requestCode(body: PairingRequestBody) = error("unused")
+            override suspend fun status(code: String) =
+                Response.success(PairingStatusResponse(
+                    status = "paired",
+                    device_id = "dev-1",
+                    access_token = null,
+                    refresh_token = null,
+                ))
+        }
+        val repo = PairingRepository(api, proposedName = "TV-1", pollIntervalMs = 1)
+        assertTrue(repo.observeClaim("ABC234") is PairingRepository.ClaimResult.PickupConsumed)
+    }
+
+    @Test
+    fun `observeClaim rethrows CancellationException during status call`() = runTest {
+        val api = object : PairingApi {
+            override suspend fun requestCode(body: PairingRequestBody) = error("unused")
+            override suspend fun status(code: String): Response<PairingStatusResponse> {
+                awaitCancellation()
+            }
+        }
+        val repo = PairingRepository(api, proposedName = "TV-1", pollIntervalMs = 1)
+        val job = launch { repo.observeClaim("ABC234") }
+        advanceUntilIdle()
+        job.cancelAndJoin()
+        assertTrue(job.isCancelled)
     }
 }

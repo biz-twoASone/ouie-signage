@@ -3,6 +3,7 @@ package com.ouie.signage.pairing
 import com.ouie.signage.auth.DeviceTokens
 import com.ouie.signage.net.PairingApi
 import com.ouie.signage.net.PairingRequestBody
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
@@ -43,6 +44,8 @@ class PairingRepository(
         while (true) {
             val resp = try {
                 api.status(code)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 return ClaimResult.Error(t)
             }
