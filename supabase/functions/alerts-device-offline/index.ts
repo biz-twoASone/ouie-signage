@@ -67,19 +67,26 @@ Deno.serve(async () => {
     const candidates = (rows ?? []) as unknown as Device[];
     if (candidates.length === 0) continue;
 
-    // Fetch uptime rules for this tenant (both device-level and group-level).
-    const { data: allRules } = await sb
+    const { data: allRules, error: rulesErr } = await sb
       .from("screen_uptime_rules")
       .select("target_device_id, target_device_group_id, days_of_week, start_time, end_time")
       .eq("tenant_id", tenant.id);
+    if (rulesErr) {
+      console.error(`query screen_uptime_rules tenant=${tenant.id}:`, rulesErr);
+      continue;
+    }
 
-    // Fetch group memberships (device_id → group_id[]).
-    // device_group_members has no tenant_id column; scoping via .in("device_id", candidates)
-    // is safe because candidates is already tenant-scoped from the devices query above.
-    const { data: memberships } = await sb
+    // device_group_members has no tenant_id column. Safety rests on the tenant-filtered
+    // allRules query above — even if a cross-tenant membership row existed, only this
+    // tenant's rules can reach the filter, so no wrong-tenant alert is possible.
+    const { data: memberships, error: memErr } = await sb
       .from("device_group_members")
       .select("device_id, device_group_id")
       .in("device_id", candidates.map((d) => d.id));
+    if (memErr) {
+      console.error(`query device_group_members tenant=${tenant.id}:`, memErr);
+      continue;
+    }
     const deviceToGroups = new Map<string, string[]>();
     for (const m of memberships ?? []) {
       const arr = deviceToGroups.get(m.device_id) ?? [];
@@ -87,8 +94,6 @@ Deno.serve(async () => {
       deviceToGroups.set(m.device_id, arr);
     }
 
-    // Filter candidates to those currently within an expected-on window.
-    // Devices with no store timezone or no applicable rule are silent (default-silent).
     const now = new Date();
     const offline = candidates.filter((d) => {
       const tz = Array.isArray(d.stores) ? d.stores[0]?.timezone : d.stores?.timezone;
