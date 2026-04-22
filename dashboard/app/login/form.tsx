@@ -16,6 +16,7 @@ export function LoginForm({ action }: Props) {
   return (
     <form
       className="space-y-3"
+      data-testid="login-form"
       onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -28,9 +29,9 @@ export function LoginForm({ action }: Props) {
     >
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required />
+        <Input id="email" name="email" type="email" required data-testid="login-email" />
       </div>
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending} className="w-full" data-testid="login-submit">
         {pending ? "Sending…" : "Send magic link"}
       </Button>
       {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
