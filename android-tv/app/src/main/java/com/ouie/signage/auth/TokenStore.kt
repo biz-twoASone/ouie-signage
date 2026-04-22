@@ -4,16 +4,7 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-/**
- * Persists device tokens in EncryptedSharedPreferences. Access token is kept in
- * memory via the MutableStateFlow; only the refresh_token + device_id survive
- * process death. When MainActivity starts, it reads these back and asks the
- * refresh endpoint for a fresh access token.
- *
- * File name `signage_tokens.xml` is excluded from Android auto-backup via
- * res/xml/backup_rules.xml.
- */
-class TokenStore(context: Context) {
+class TokenStore(context: Context) : TokenSource {
 
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -27,34 +18,31 @@ class TokenStore(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
-    fun load(): PersistedTokens? {
+    override fun loadSync(): DeviceTokens? {
         val refresh = prefs.getString(KEY_REFRESH, null) ?: return null
+        val access = prefs.getString(KEY_ACCESS, null) ?: return null
         val deviceId = prefs.getString(KEY_DEVICE_ID, null) ?: return null
-        val access = prefs.getString(KEY_ACCESS, null) // may be null (RAM-only in v1)
-        return PersistedTokens(refreshToken = refresh, deviceId = deviceId, lastAccessToken = access)
+        val expiresIn = prefs.getInt(KEY_EXPIRES_IN, 3600)
+        return DeviceTokens(access, refresh, deviceId, expiresIn)
     }
 
-    fun save(tokens: DeviceTokens) {
+    override fun save(tokens: DeviceTokens) {
         prefs.edit()
+            .putString(KEY_ACCESS, tokens.accessToken)
             .putString(KEY_REFRESH, tokens.refreshToken)
             .putString(KEY_DEVICE_ID, tokens.deviceId)
-            .putString(KEY_ACCESS, tokens.accessToken)
+            .putInt(KEY_EXPIRES_IN, tokens.expiresInSeconds)
             .apply()
     }
 
-    fun clear() {
+    override fun clear() {
         prefs.edit().clear().apply()
     }
-
-    data class PersistedTokens(
-        val refreshToken: String,
-        val deviceId: String,
-        val lastAccessToken: String?,
-    )
 
     private companion object {
         const val KEY_REFRESH = "refresh_token"
         const val KEY_ACCESS = "access_token"
         const val KEY_DEVICE_ID = "device_id"
+        const val KEY_EXPIRES_IN = "expires_in"
     }
 }
