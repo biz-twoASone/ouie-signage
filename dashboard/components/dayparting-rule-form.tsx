@@ -110,11 +110,11 @@ export function DaypartingRuleForm({ initial, devices, groups, playlists, onSubm
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">
           <Label htmlFor="start_time">Start time</Label>
-          <Input type="time" name="start_time" defaultValue={initial?.start_time ?? "11:00"} required />
+          <Input type="time" name="start_time" defaultValue={(initial?.start_time ?? "11:00").slice(0, 5)} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="end_time">End time</Label>
-          <Input type="time" name="end_time" defaultValue={initial?.end_time ?? "14:00"} required />
+          <Input type="time" name="end_time" defaultValue={(initial?.end_time ?? "14:00").slice(0, 5)} required />
         </div>
       </div>
 

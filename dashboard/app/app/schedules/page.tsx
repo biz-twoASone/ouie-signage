@@ -1,17 +1,23 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui-composed/page-header";
+import { SchedulesTable } from "./schedules-table";
+import { Plus } from "lucide-react";
 
-// ISO day labels: index 1..7 (0 unused).
-const DAY_LABELS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function formatDays(ds: number[]): string {
-  const sorted = [...ds].sort((a, b) => a - b);
-  // If it's Mon-Fri in one block, shorten.
-  if (sorted.length === 5 && sorted.every((d, i) => d === i + 1)) return "Mon–Fri";
-  if (sorted.length === 7) return "Every day";
-  return sorted.map(d => DAY_LABELS[d]).join("/");
-}
+type Rule = {
+  id: string;
+  label: string | null;
+  days_of_week: number[];
+  start_time: string;
+  end_time: string;
+  effective_at: string;
+  playlists: { name: string } | null;
+  target_device_id: string | null;
+  devices: { name: string } | null;
+  target_device_group_id: string | null;
+  device_groups: { name: string } | null;
+};
 
 export default async function SchedulesPage() {
   const supabase = await createClient();
@@ -25,31 +31,19 @@ export default async function SchedulesPage() {
     .order("effective_at", { ascending: false });
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between">
-        <h1 className="text-2xl font-semibold">Dayparting rules</h1>
-        <Button asChild><Link href="/app/schedules/new">New rule</Link></Button>
-      </div>
-      <ul className="space-y-2">
-        {(rules ?? []).map(r => (
-          <li key={r.id} className="border rounded p-3">
-            <Link href={`/app/schedules/${r.id}`} className="flex flex-col gap-1">
-              <span className="font-medium">{r.label ?? "(unnamed)"}</span>
-              <span className="text-sm text-muted-foreground">
-                {formatDays(r.days_of_week)} {r.start_time}–{r.end_time} →
-                {" "}<span className="italic">{(r.playlists as unknown as { name: string } | null)?.name ?? "(deleted)"}</span>
-                {" · "}target:{" "}
-                {r.target_device_id
-                  ? (r.devices as unknown as { name: string } | null)?.name ?? "(deleted device)"
-                  : (r.device_groups as unknown as { name: string } | null)?.name ?? "(deleted group)"}
-              </span>
+    <div className="space-y-6">
+      <PageHeader
+        title="Scheduling"
+        description="Schedule playlists to run at specific times and days."
+        primaryAction={
+          <Button asChild data-testid="dayparting-add-rule-button">
+            <Link href="/app/schedules/new">
+              <Plus className="mr-2 h-4 w-4" /> New rule
             </Link>
-          </li>
-        ))}
-        {(!rules || rules.length === 0) && (
-          <li className="text-muted-foreground">No rules yet.</li>
-        )}
-      </ul>
+          </Button>
+        }
+      />
+      <SchedulesTable data={(rules ?? []) as unknown as Rule[]} />
     </div>
   );
 }
