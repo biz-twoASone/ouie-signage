@@ -21,9 +21,11 @@ captures/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
+
+# Claude Code project settings (per-user)
+.claude/
 
 # Logs
 *.log
@@ -32,3 +34,6 @@ yarn-debug.log*
 
 # Supabase local
 .supabase/
+
+# Playwright MCP session artifacts (snapshots, console logs)
+.playwright-mcp/
