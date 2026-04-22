@@ -7,34 +7,41 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FN = `${SUPABASE_URL}/functions/v1`;
 
 Deno.test({
-  name: "alerts-device-offline: creates alert_events row for offline device",
+  name: "alerts-device-offline: creates alert_events row for offline device (with always-on rule)",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
     const creds = await pairDevice();
 
-    // Backdate the device's last_seen_at to 45 min ago so it counts as offline.
     const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Seed an always-on uptime rule so the alert isn't suppressed by the new default.
+    const { error: ruleErr } = await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_id: creds.device_id,
+      days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      start_time: "00:00",
+      end_time: "23:59",
+    });
+    assertEquals(ruleErr, null);
+
     const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
     const { error: updErr } = await svc.from("devices")
       .update({ last_seen_at: fortyFiveMinAgo })
       .eq("id", creds.device_id);
     assertEquals(updErr, null);
 
-    // First call: should find the offline device and create an alert_events row.
     const r1 = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
     assertEquals(r1.status, 200);
     const body1 = await r1.json() as { tenants_alerted: number };
     assertEquals(body1.tenants_alerted, 1);
 
-    // Verify alert_events row was inserted for this tenant.
     const { data: events } = await svc.from("alert_events")
       .select("id, kind, payload")
       .eq("tenant_id", creds.tenant_id)
       .eq("kind", "device_offline");
     assertEquals(events?.length, 1);
 
-    // Second call within 1h: dedup should kick in, no new row.
     const r2 = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
     assertEquals(r2.status, 200);
     const body2 = await r2.json() as { tenants_alerted: number };
@@ -114,6 +121,15 @@ Deno.test({
     const creds = await pairDevice();
     const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
 
+    // Seed an always-on uptime rule so the alert isn't suppressed by the new default.
+    await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_id: creds.device_id,
+      days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      start_time: "00:00",
+      end_time: "23:59",
+    });
+
     const override = `ops-${Date.now()}@test.local`;
     await svc.from("tenants")
       .update({ alert_recipient_email: override })
@@ -160,5 +176,142 @@ Deno.test({
       .eq("tenant_id", creds.tenant_id)
       .eq("kind", "device_offline");
     assertEquals(events?.length, 0, "no alert for tenant with null last_seen_at device");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: device with NO uptime rules is silent (new default)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // No rules inserted. Backdate to make the device offline.
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id)
+      .eq("kind", "device_offline");
+    assertEquals(events?.length, 0, "no uptime rule = silent, even if offline");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: device-level rule that does not cover now → no alert",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Rule covers only Sunday 03:00-03:05 — virtually never matches "now".
+    await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_id: creds.device_id,
+      days_of_week: [7],
+      start_time: "03:00",
+      end_time: "03:05",
+    });
+
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id);
+    assertEquals(events?.length, 0, "current time outside rule window = silent");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: group-level rule applies when device has no device-level rule",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Create a group, add device as member, attach a 24/7 uptime rule to the group.
+    const { data: group } = await svc.from("device_groups")
+      .insert({ tenant_id: creds.tenant_id, name: "E2E group" })
+      .select().single();
+    await svc.from("device_group_members").insert({
+      device_group_id: group!.id, device_id: creds.device_id,
+    });
+    await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_group_id: group!.id,
+      days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      start_time: "00:00",
+      end_time: "23:59",
+    });
+
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id);
+    assertEquals(events?.length, 1, "group rule covers device when no device-level rule exists");
+  },
+});
+
+Deno.test({
+  name: "alerts-device-offline: device-level rule overrides group-level rule",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const svc = createClient(SUPABASE_URL, SERVICE, { auth: { persistSession: false } });
+
+    // Group says always-on; but device-level rule is Sunday-only (doesn't cover now).
+    // Expected: device-level wins → silent.
+    const { data: group } = await svc.from("device_groups")
+      .insert({ tenant_id: creds.tenant_id, name: "E2E group 2" })
+      .select().single();
+    await svc.from("device_group_members").insert({
+      device_group_id: group!.id, device_id: creds.device_id,
+    });
+    await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_group_id: group!.id,
+      days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      start_time: "00:00",
+      end_time: "23:59",
+    });
+    await svc.from("screen_uptime_rules").insert({
+      tenant_id: creds.tenant_id,
+      target_device_id: creds.device_id,
+      days_of_week: [7],
+      start_time: "03:00",
+      end_time: "03:05",
+    });
+
+    const fortyFiveMinAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    await svc.from("devices").update({ last_seen_at: fortyFiveMinAgo }).eq("id", creds.device_id);
+
+    const r = await fetch(`${FN}/alerts-device-offline`, { method: "POST" });
+    assertEquals(r.status, 200);
+    await r.body?.cancel();
+
+    const { data: events } = await svc.from("alert_events")
+      .select("id")
+      .eq("tenant_id", creds.tenant_id);
+    assertEquals(events?.length, 0, "device-level rule (narrow) wins over group-level (always-on)");
   },
 });
