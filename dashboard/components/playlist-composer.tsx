@@ -42,7 +42,7 @@ export function PlaylistComposer({ playlistId, items, media }: Props) {
   const orderedItems = [...items].sort((a, b) => a.position - b.position);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="playlist-composer">
       <section>
         <h2 className="font-medium mb-2">Items (drag to reorder)</h2>
         {orderedItems.length === 0 ? (
@@ -52,7 +52,10 @@ export function PlaylistComposer({ playlistId, items, media }: Props) {
             items={orderedItems.map(i => ({
               id: i.id,
               content: (
-                <div className="flex items-center justify-between gap-3">
+                <div
+                  data-testid={`playlist-composer-item-${i.id}`}
+                  className="flex items-center justify-between gap-3"
+                >
                   <span className="flex-1 truncate">{i.media?.original_filename ?? "(deleted media)"}</span>
                   <Input
                     type="number"

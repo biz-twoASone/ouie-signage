@@ -2,8 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { PlaylistComposer } from "@/components/playlist-composer";
 import { deletePlaylist, renamePlaylist } from "@/lib/actions/playlists";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui-composed/page-header";
+import { InlineEdit } from "@/components/ui-composed/inline-edit";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeletePlaylistButton } from "./delete-playlist-button";
 
 export default async function PlaylistDetailPage(
   { params }: { params: Promise<{ id: string }> },
@@ -23,9 +25,9 @@ export default async function PlaylistDetailPage(
   ]);
   if (!playlist) notFound();
 
-  async function rename(fd: FormData) {
+  async function rename(name: string) {
     "use server";
-    await renamePlaylist(id, String(fd.get("name") ?? ""));
+    await renamePlaylist(id, name);
   }
   async function remove() {
     "use server";
@@ -33,11 +35,17 @@ export default async function PlaylistDetailPage(
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <form action={rename} className="flex gap-2">
-        <Input name="name" defaultValue={playlist.name} required />
-        <Button type="submit">Rename</Button>
-      </form>
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        title={
+          <InlineEdit
+            value={playlist.name}
+            onSave={rename}
+            data-testid="playlist-detail-name"
+          />
+        }
+        description="Drag to reorder items. Per-item duration defaults to the media's own length for videos."
+      />
 
       <PlaylistComposer
         playlistId={id}
@@ -49,9 +57,12 @@ export default async function PlaylistDetailPage(
         media={media ?? []}
       />
 
-      <form action={remove}>
-        <Button type="submit" variant="destructive">Delete playlist</Button>
-      </form>
+      <Card className="border-destructive/50">
+        <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>
+        <CardContent>
+          <DeletePlaylistButton onConfirm={remove} playlistName={playlist.name} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
