@@ -11,9 +11,11 @@ import com.ouie.signage.net.RefreshAdapter
 import com.ouie.signage.net.RetrofitRefreshAdapter
 import com.ouie.signage.net.TokenAuthenticator
 import com.ouie.signage.pairing.PairingRepository
+import com.ouie.signage.pairing.PairingViewModel
 import com.ouie.signage.state.AppStateHolder
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
@@ -58,4 +60,6 @@ val appModule = module {
             proposedName = android.os.Build.MODEL ?: "Android TV",
         )
     }
+
+    viewModel { PairingViewModel(repo = get(), tokenStore = get(), appState = get()) }
 }
