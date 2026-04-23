@@ -6,6 +6,7 @@ import com.ouie.signage.BuildConfig
 import com.ouie.signage.cache.CacheRootResolver
 import com.ouie.signage.config.ConfigRepository
 import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.fcm.FcmReceiptTracker
 import com.ouie.signage.fcm.FcmTokenSource
 import com.ouie.signage.net.HeartbeatApi
 import com.ouie.signage.preload.PreloadStatusSource
@@ -29,6 +30,7 @@ class HeartbeatScheduler(
     private val errorBus: ErrorBus,
     private val fcmTokenSource: FcmTokenSource,
     private val preloadStatusSource: PreloadStatusSource,
+    private val fcmReceiptTracker: FcmReceiptTracker,
     private val intervalMs: Long = 60_000,
 ) {
 
@@ -58,6 +60,7 @@ class HeartbeatScheduler(
         }
         val errors = errorBus.drain()
         val fcm = fcmTokenSource.current()
+        val fcmReceived = fcmReceiptTracker.current()?.toString()
         val payload = HeartbeatPayload(
             app_version = BuildConfig.VERSION_NAME,
             uptime_seconds = uptimeSeconds,
@@ -67,6 +70,7 @@ class HeartbeatScheduler(
             cache_storage_info = cacheInfo,
             errors_since_last_heartbeat = errors,
             fcm_token = fcm,
+            last_fcm_received_at = fcmReceived,
         )
         try {
             api.post(payload)

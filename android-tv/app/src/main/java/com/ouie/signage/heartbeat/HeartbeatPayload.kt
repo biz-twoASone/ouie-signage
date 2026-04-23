@@ -19,6 +19,13 @@ data class HeartbeatPayload(
      * heartbeat so server-side rotations and reinstalls recover automatically.
      */
     val fcm_token: String? = null,
+    /**
+     * Timestamp of the last FCM message received by SignageMessagingService.
+     * Paired with server-side last_sync_now_dispatched_at to compute delivery
+     * latency on the dashboard. Null if no push has been received this process
+     * lifetime.
+     */
+    val last_fcm_received_at: String? = null,
 )
 
 @Serializable

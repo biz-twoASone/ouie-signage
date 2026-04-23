@@ -12,6 +12,7 @@ import com.ouie.signage.config.ConfigPoller
 import com.ouie.signage.config.ConfigRepository
 import com.ouie.signage.config.ConfigStore
 import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.fcm.FcmReceiptTracker
 import com.ouie.signage.fcm.FcmTokenSource
 import com.ouie.signage.fcm.SyncNowBroadcast
 import com.ouie.signage.heartbeat.ClockSkewTracker
@@ -50,6 +51,7 @@ class RunningCoordinator(
     private val errorBus: ErrorBus,
     private val fcmTokenSource: FcmTokenSource,
     private val syncNow: SyncNowBroadcast,
+    private val fcmReceiptTracker: FcmReceiptTracker,
 ) {
 
     private var scope: CoroutineScope? = null
@@ -151,6 +153,7 @@ class RunningCoordinator(
             errorBus = errorBus,
             fcmTokenSource = fcmTokenSource,
             preloadStatusSource = scanner,
+            fcmReceiptTracker = fcmReceiptTracker,
         )
         heartbeat = beat
         beat.start()
