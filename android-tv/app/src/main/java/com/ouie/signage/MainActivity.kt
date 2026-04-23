@@ -1,6 +1,7 @@
 // android-tv/app/src/main/java/com/ouie/signage/MainActivity.kt
 package com.ouie.signage
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,11 +14,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.ContextCompat
 import com.ouie.signage.auth.TokenSource
 import com.ouie.signage.coordinator.RunningCoordinator
 import com.ouie.signage.error.ErrorScreen
 import com.ouie.signage.pairing.PairingScreen
 import com.ouie.signage.running.RunningScreen
+import com.ouie.signage.service.SignageService
 import com.ouie.signage.state.AppState
 import com.ouie.signage.state.AppStateHolder
 import org.koin.android.ext.android.inject
@@ -26,37 +29,25 @@ class MainActivity : ComponentActivity() {
 
     private val appState: AppStateHolder by inject()
     private val tokenStore: TokenSource by inject()
-    private val coordinator: RunningCoordinator by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Cold-start recovery from 3a: if tokens exist, go straight to Running.
-        // Coordinator will start below when AppState emits Running.
         tokenStore.loadSync()?.let { appState.toRunning(it.deviceId) }
-
-        setContent { SignageRoot(appState, coordinator) }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Activity going away — stop loops. On configuration change Android will
-        // re-create the activity; coordinator.start() is idempotent on the next
-        // Running emission.
-        coordinator.stop()
+        setContent { SignageRoot(appState) }
     }
 }
 
 @Composable
-private fun SignageRoot(appState: AppStateHolder, coordinator: RunningCoordinator) {
+private fun SignageRoot(appState: AppStateHolder) {
     val state by appState.state.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(state) {
-        // Tie coordinator lifecycle to AppState.Running. If we ever enter Pairing
-        // or Error, stop the loops so we don't hammer the server with a revoked
-        // token.
         when (state) {
-            is AppState.Running -> coordinator.start()
-            else -> coordinator.stop()
+            is AppState.Running -> ContextCompat.startForegroundService(
+                context,
+                Intent(context, SignageService::class.java),
+            )
+            else -> context.stopService(Intent(context, SignageService::class.java))
         }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
