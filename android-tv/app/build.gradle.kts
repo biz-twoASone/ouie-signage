@@ -15,7 +15,7 @@ android {
         minSdk = 26              // Android TV 8.0 floor; current F&B TVs are newer
         targetSdk = 35
         versionCode = 1
-        versionName = "0.2.0-3b"
+        versionName = "0.3.0-3c"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
