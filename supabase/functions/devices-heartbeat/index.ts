@@ -28,6 +28,9 @@ Deno.serve(async (req) => {
   if (typeof body.fcm_token === "string" && body.fcm_token.length > 0) {
     update.fcm_token = body.fcm_token;
   }
+  if (typeof body.last_fcm_received_at === "string") {
+    update.last_fcm_received_at = body.last_fcm_received_at;
+  }
   if (Array.isArray(body.errors_since_last_heartbeat) && body.errors_since_last_heartbeat.length > 0) {
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;

@@ -6,6 +6,7 @@
 // respond 403 without ever touching FCM.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { sendFcmSync } from "../_shared/fcm.ts";
+import { serviceRoleClient } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method", { status: 405 });
@@ -45,6 +46,31 @@ Deno.serve(async (req) => {
     for (const row of data ?? []) {
       const token = (row as { devices?: { fcm_token?: string | null } }).devices?.fcm_token;
       if (typeof token === "string" && token.length > 0) targetTokens.push(token);
+    }
+  }
+
+  // Stamp dispatch timestamp(s) on the target device row(s) for delivery-latency
+  // tracking. Uses service-role client so RLS doesn't block the write. Separate
+  // from the FCM send so a DB failure doesn't block the push and vice versa.
+  const dispatchedAt = new Date().toISOString();
+  const svc = serviceRoleClient();
+  if (deviceId) {
+    await svc.from("devices")
+      .update({ last_sync_now_dispatched_at: dispatchedAt })
+      .eq("id", deviceId);
+  } else if (groupId) {
+    // For group sends, update every member device that we have a token for.
+    // Skip the DB lookup if we ended up with no tokens (nothing to time).
+    if (targetTokens.length > 0) {
+      const memberIds = await userClient.from("device_group_members")
+        .select("device_id")
+        .eq("device_group_id", groupId);
+      const ids = (memberIds.data ?? []).map((r: { device_id: string }) => r.device_id);
+      if (ids.length > 0) {
+        await svc.from("devices")
+          .update({ last_sync_now_dispatched_at: dispatchedAt })
+          .in("id", ids);
+      }
     }
   }
 
