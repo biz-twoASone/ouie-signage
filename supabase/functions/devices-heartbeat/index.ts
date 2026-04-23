@@ -31,6 +31,15 @@ Deno.serve(async (req) => {
   if (typeof body.last_fcm_received_at === "string") {
     update.last_fcm_received_at = body.last_fcm_received_at;
   }
+  if (typeof body.current_media_id === "string") {
+    update.current_media_id = body.current_media_id;
+  } else if (body.current_media_id === null) {
+    // Explicit null (Playing → Preparing transition): clear the column.
+    update.current_media_id = null;
+  }
+  if (typeof body.playback_state === "string") {
+    update.playback_state = body.playback_state;
+  }
   if (Array.isArray(body.errors_since_last_heartbeat) && body.errors_since_last_heartbeat.length > 0) {
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;

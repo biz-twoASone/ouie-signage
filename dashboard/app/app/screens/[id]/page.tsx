@@ -28,6 +28,7 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       cache_storage_info, current_app_version, current_playlist_id,
       last_config_version_applied, clock_skew_seconds_from_server,
       last_fcm_received_at, last_sync_now_dispatched_at,
+      current_media_id, playback_state,
       stores(name, timezone)
     `).eq("id", id).maybeSingle(),
     supabase.from("playlists").select("id, name").order("name"),
@@ -161,6 +162,20 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
             {cache.root ?? "?"} ({cache.filesystem ?? "?"}) —
             {" "}{Math.round((cache.free_bytes ?? 0) / 1e9)} GB free
             {" / "}{Math.round((cache.total_bytes ?? 0) / 1e9)} GB total
+          </CardContent>
+        </Card>
+      )}
+
+      {device.playback_state && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Playback state</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            <span className="font-mono">{device.playback_state}</span>
+            {device.current_media_id && (
+              <span className="text-muted-foreground">
+                {" · "}media {device.current_media_id.slice(0, 8)}…
+              </span>
+            )}
           </CardContent>
         </Card>
       )}

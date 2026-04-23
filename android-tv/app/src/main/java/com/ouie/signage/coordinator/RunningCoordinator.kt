@@ -154,6 +154,7 @@ class RunningCoordinator(
             fcmTokenSource = fcmTokenSource,
             preloadStatusSource = scanner,
             fcmReceiptTracker = fcmReceiptTracker,
+            playbackStateSource = director,
         )
         heartbeat = beat
         beat.start()
