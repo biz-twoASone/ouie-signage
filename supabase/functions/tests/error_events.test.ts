@@ -51,8 +51,10 @@ Deno.test({
     assertEquals(rows?.length, 2);
     assertEquals(rows?.[0].kind, "playback_failed");
     assertEquals(rows?.[0].message, "codec not supported");
+    assertEquals(rows?.[0].occurred_at, "2026-04-23T10:00:00+00:00");
     assertEquals(rows?.[1].kind, "download_failed");
     assertEquals(rows?.[1].message, null);
+    assertEquals(rows?.[1].occurred_at, "2026-04-23T10:00:05+00:00");
   },
 });
 
@@ -126,5 +128,63 @@ Deno.test({
     assertEquals(rows?.length, 1);
     assertEquals(rows?.[0].media_id, null);
     assertEquals(rows?.[0].kind, "download_failed");
+  },
+});
+
+Deno.test({
+  name: "heartbeat with malformed timestamp falls back to server time, batch still succeeds",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const creds = await pairDevice();
+    const r = await fetch(`${FN}/devices-heartbeat`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.access_token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        app_version: "test",
+        uptime_seconds: 10,
+        errors_since_last_heartbeat: [
+          {
+            timestamp: "2026-04-23T10:00:00.000Z",
+            kind: "good_event",
+            media_id: null,
+            message: "well-formed",
+          },
+          {
+            timestamp: "not-a-date",
+            kind: "bad_timestamp",
+            media_id: null,
+            message: "should fall back",
+          },
+        ],
+      }),
+    });
+    assertEquals(r.status, 204);
+    await r.body?.cancel();
+
+    const svc = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const { data: rows } = await svc.from("device_error_events")
+      .select("kind, occurred_at")
+      .eq("device_id", creds.device_id)
+      .order("kind", { ascending: true });
+    assertEquals(rows?.length, 2);
+    // Good event: preserved timestamp.
+    const good = rows?.find((r) => r.kind === "good_event");
+    assertEquals(good?.occurred_at, "2026-04-23T10:00:00+00:00");
+    // Bad event: server time fallback, NOT the literal "not-a-date" string.
+    const bad = rows?.find((r) => r.kind === "bad_timestamp");
+    // Just verify it's a parseable ISO timestamp (close to "now"), not the garbage input.
+    const badParsed = new Date(bad?.occurred_at ?? "");
+    const ageSeconds = (Date.now() - badParsed.getTime()) / 1000;
+    // Should be within last 60 seconds (cite: test runs complete in well under 60s locally).
+    if (ageSeconds < 0 || ageSeconds > 60) {
+      throw new Error(`bad_timestamp occurred_at (${bad?.occurred_at}) not a recent fallback`);
+    }
   },
 });

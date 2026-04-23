@@ -30,6 +30,11 @@ Deno.serve(async (req) => {
   }
   if (Array.isArray(body.errors_since_last_heartbeat) && body.errors_since_last_heartbeat.length > 0) {
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+    // Lenient parse: any object-shaped entry is accepted even if some fields are
+    // missing. Missing fields use fallbacks (kind → "unknown", message → null,
+    // occurred_at → server time). This gives operators visibility into malformed
+    // device reports rather than silently dropping them.
     const errorRows = body.errors_since_last_heartbeat
       .filter((e: unknown): e is Record<string, unknown> => typeof e === "object" && e !== null)
       .map((e: Record<string, unknown>) => ({
@@ -38,7 +43,9 @@ Deno.serve(async (req) => {
         kind: typeof e.kind === "string" ? e.kind : "unknown",
         media_id: typeof e.media_id === "string" && UUID_RE.test(e.media_id) ? e.media_id : null,
         message: typeof e.message === "string" ? e.message.slice(0, 500) : null,
-        occurred_at: typeof e.timestamp === "string" ? e.timestamp : new Date().toISOString(),
+        occurred_at: typeof e.timestamp === "string" && ISO_RE.test(e.timestamp)
+          ? e.timestamp
+          : new Date().toISOString(),
       }));
     if (errorRows.length > 0) {
       const { error: insertError } = await svc.from("device_error_events").insert(errorRows);
