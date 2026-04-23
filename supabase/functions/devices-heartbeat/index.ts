@@ -28,11 +28,25 @@ Deno.serve(async (req) => {
   if (typeof body.fcm_token === "string" && body.fcm_token.length > 0) {
     update.fcm_token = body.fcm_token;
   }
-  // errors_since_last_heartbeat: accepted but not persisted in v1; the device
-  // emits it per spec §8, server-side storage is a follow-up plan. Log count
-  // so edge function logs give visibility.
   if (Array.isArray(body.errors_since_last_heartbeat) && body.errors_since_last_heartbeat.length > 0) {
-    console.log(`device=${claims.sub} errors=${body.errors_since_last_heartbeat.length}`);
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const errorRows = body.errors_since_last_heartbeat
+      .filter((e: unknown): e is Record<string, unknown> => typeof e === "object" && e !== null)
+      .map((e: Record<string, unknown>) => ({
+        tenant_id: claims.tenant_id,
+        device_id: claims.sub,
+        kind: typeof e.kind === "string" ? e.kind : "unknown",
+        media_id: typeof e.media_id === "string" && UUID_RE.test(e.media_id) ? e.media_id : null,
+        message: typeof e.message === "string" ? e.message.slice(0, 500) : null,
+        occurred_at: typeof e.timestamp === "string" ? e.timestamp : new Date().toISOString(),
+      }));
+    if (errorRows.length > 0) {
+      const { error: insertError } = await svc.from("device_error_events").insert(errorRows);
+      if (insertError) {
+        // Log but don't fail heartbeat — device shouldn't retry on error-log failure.
+        console.error(`device=${claims.sub} device_error_events insert failed: ${insertError.message}`);
+      }
+    }
   }
 
   const { error } = await svc.from("devices").update(update).eq("id", claims.sub).is("revoked_at", null);
