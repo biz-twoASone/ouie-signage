@@ -11,12 +11,17 @@ import com.ouie.signage.cache.MediaCacheIndex
 import com.ouie.signage.config.ConfigPoller
 import com.ouie.signage.config.ConfigRepository
 import com.ouie.signage.config.ConfigStore
+import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.fcm.FcmTokenSource
+import com.ouie.signage.fcm.SyncNowBroadcast
 import com.ouie.signage.heartbeat.ClockSkewTracker
 import com.ouie.signage.heartbeat.HeartbeatScheduler
 import com.ouie.signage.net.CacheStatusApi
 import com.ouie.signage.net.ConfigApi
 import com.ouie.signage.net.HeartbeatApi
 import com.ouie.signage.playback.PlaybackDirector
+import com.ouie.signage.preload.PreloadIndex
+import com.ouie.signage.preload.PreloadScanner
 import com.ouie.signage.sync.CacheStatusReporter
 import com.ouie.signage.sync.MediaDownloader
 import com.ouie.signage.sync.MediaSyncWorker
@@ -27,40 +32,24 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.io.File
 
-/**
- * The heart of 3b. Orchestrates:
- *   - CacheManager (rebuilt on start since cache root selection happens here)
- *   - ConfigPoller         — 60 s devices-config loop
- *   - HeartbeatScheduler   — 60 s devices-heartbeat loop
- *   - MediaSyncWorker      — reactive download queue
- *   - CacheStatusReporter  — batched devices-cache-status flush
- *   - PlaybackDirector     — 1 Hz ticker
- *
- * Lifecycle:
- *   start() — idempotent; allocates a fresh `scope`, picks the cache root,
- *             wires loops, kicks them off.
- *   stop()  — cancels the scope (stops every child coroutine).
- *
- * Called by MainActivity in response to AppState transitions.
- */
 class RunningCoordinator(
     private val context: Context,
-    /**
-     * Plain client for R2 presigned-URL media fetches. Must NOT carry a
-     * Bearer Authorization header — R2 treats it as a conflicting auth method
-     * alongside the SigV4 query params and rejects with 400. Kept separate
-     * from the authed client below.
-     */
     private val downloaderHttpClient: OkHttpClient,
     private val configApi: ConfigApi,
     private val heartbeatApi: HeartbeatApi,
     private val cacheStatusApi: CacheStatusApi,
     private val skewTracker: ClockSkewTracker,
     private val json: Json,
+    private val errorBus: ErrorBus,
+    private val fcmTokenSource: FcmTokenSource,
+    private val syncNow: SyncNowBroadcast,
 ) {
 
     private var scope: CoroutineScope? = null
@@ -68,6 +57,9 @@ class RunningCoordinator(
     private var heartbeat: HeartbeatScheduler? = null
     private var sync: MediaSyncWorker? = null
     private var reporter: CacheStatusReporter? = null
+    private var preloadScanner: PreloadScanner? = null
+    private var configRepoRef: ConfigRepository? = null
+    private var cacheRef: CacheManager? = null
 
     private val _cachePick = MutableStateFlow<CacheRootResolver.Pick?>(null)
     val cachePick: StateFlow<CacheRootResolver.Pick?> = _cachePick.asStateFlow()
@@ -86,10 +78,12 @@ class RunningCoordinator(
         layout.mediaDir().mkdirs()
         val index = MediaCacheIndex(context, layout.indexDbFile())
         val cache = CacheManager(layout, index)
+        cacheRef = cache
 
         val configDir = File(context.filesDir, "signage/config")
         val configStore = ConfigStore(configDir, json)
         val configRepo = ConfigRepository(configApi, configStore)
+        configRepoRef = configRepo
 
         val director = PlaybackDirector(
             config = configRepo.current,
@@ -98,13 +92,20 @@ class RunningCoordinator(
         )
         _playbackDirector.value = director
 
-        // Rehydrate cached set from disk: ask MediaCacheIndex which media_ids are
-        // known, filter to what the current config references. The config may be
-        // null on a fresh install; next fetch() fills it.
         val knownIds: List<String> = configRepo.current.value?.media?.map { it.id } ?: emptyList()
         cache.rehydrate(knownIds)
 
-        val downloader = MediaDownloader(downloaderHttpClient, layout)
+        val downloader = MediaDownloader(
+            httpClient = downloaderHttpClient,
+            layout = layout,
+            ensureSpace = { bytes ->
+                val referenced = configRepo.current.value?.playlists
+                    ?.flatMap { pl -> pl.items.map { it.media_id } }
+                    ?.toSet()
+                    ?: emptySet()
+                cache.ensureFreeSpaceFor(bytes, referencedMediaIds = referenced)
+            },
+        )
         val report = CacheStatusReporter(newScope, cacheStatusApi)
         reporter = report
         report.start()
@@ -120,6 +121,22 @@ class RunningCoordinator(
         sync = syncer
         syncer.start()
 
+        // Preload scanner — runs at start + on each config change.
+        val preloadDir = File(pick.root.parentFile ?: pick.root, "preload")
+        val preloadIndex = PreloadIndex(context, File(pick.root.parentFile ?: pick.root, "preload_index.db"))
+        val scanner = PreloadScanner(
+            preloadDir = preloadDir,
+            cache = cache,
+            index = preloadIndex,
+            cacheIndex = index,
+            reporter = report,
+            errorBus = errorBus,
+        )
+        preloadScanner = scanner
+        configRepo.current.onEach { cfg ->
+            scanner.scanOnce(cfg)
+        }.launchIn(newScope)
+
         val poller = ConfigPoller(newScope, configRepo)
         configPoller = poller
         poller.start()
@@ -131,11 +148,39 @@ class RunningCoordinator(
             skewTracker = skewTracker,
             playlistSource = director,
             pickProvider = { _cachePick.value },
+            errorBus = errorBus,
+            fcmTokenSource = fcmTokenSource,
+            preloadStatusSource = scanner,
         )
         heartbeat = beat
         beat.start()
 
+        // FCM-driven sync-now: every broadcast triggers an immediate config refetch.
+        syncNow.events.onEach {
+            triggerSyncNow()
+        }.launchIn(newScope)
+
+        fcmTokenSource.prime()
         director.startTicker(newScope)
+    }
+
+    /**
+     * Immediate-sync path (spec §6.4). Invoked by FCM data message or the
+     * playback loop's "desired not cached" branch. Fires a config fetch + sync
+     * cycle outside the 60 s poll cadence.
+     */
+    fun triggerSyncNow() {
+        val s = scope ?: return
+        val repo = configRepoRef ?: return
+        s.launch {
+            try {
+                repo.fetch()  // MediaSyncWorker collects configRepo.current, auto-reacts
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                errorBus.report("sync_now_failed", null, t.message)
+            }
+        }
     }
 
     fun stop() {
@@ -145,16 +190,17 @@ class RunningCoordinator(
         heartbeat?.stop();    heartbeat = null
         sync?.stop();         sync = null
         reporter?.stop();     reporter = null
+        preloadScanner = null
+        configRepoRef = null
+        cacheRef = null
         scope?.cancel()
         scope = null
         _cachePick.value = null
     }
 
     private fun pickCacheRoot(context: Context): CacheRootResolver.Pick {
-        // Primary: getExternalFilesDirs. First element is internal "external"; others
-        // are mounted externals (USB). Each entry may be null on permission issues.
         val externalDirs = context.getExternalFilesDirs(null).filterNotNull().filter { it.exists() }
-        val primary = externalDirs.drop(1)   // skip the first, which is emulated-internal
+        val primary = externalDirs.drop(1)
         val candidates = primary.map { dir ->
             val stats = try { StatFs(dir.absolutePath) } catch (_: Throwable) { null }
             val free = stats?.let { it.availableBlocksLong * it.blockSizeLong } ?: 0L
@@ -165,8 +211,6 @@ class RunningCoordinator(
         val internalStats = try { StatFs(internalDir.absolutePath) } catch (_: Throwable) { null }
         val internalFree = internalStats?.let { it.availableBlocksLong * it.blockSizeLong } ?: 0L
 
-        // Also try StorageManager for additional volumes not returned by the primary call.
-        // Kept conservative — skip on API errors; the primary path covers the common case.
         val sm = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
         val additional: List<CacheRootResolver.Candidate> = try {
             sm?.storageVolumes?.mapNotNull { v ->

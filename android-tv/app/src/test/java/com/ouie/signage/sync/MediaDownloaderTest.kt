@@ -86,4 +86,20 @@ class MediaDownloaderTest {
         )
         assertEquals(true, result is MediaDownloader.Result.NetworkError)
     }
+
+    @Test
+    fun `ensureSpace returning false short-circuits to InsufficientSpace`() = runBlocking {
+        val dl = MediaDownloader(OkHttpClient(), layout(), ensureSpace = { false })
+        val result = dl.download(
+            MediaDto(
+                id = "m1", kind = "video", size_bytes = 11,
+                checksum = "0".repeat(64),
+                url = "http://unused.example/ignored.mp4",
+            ),
+            expectedExt = "mp4",
+        )
+        assertEquals(MediaDownloader.Result.InsufficientSpace, result)
+        // No HTTP request was made (server queue is untouched).
+        assertEquals(0, server.requestCount)
+    }
 }

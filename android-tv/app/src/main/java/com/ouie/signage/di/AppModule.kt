@@ -4,6 +4,9 @@ package com.ouie.signage.di
 import com.ouie.signage.auth.TokenSource
 import com.ouie.signage.auth.TokenStore
 import com.ouie.signage.coordinator.RunningCoordinator
+import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.fcm.FcmTokenSource
+import com.ouie.signage.fcm.SyncNowBroadcast
 import com.ouie.signage.heartbeat.ClockSkewTracker
 import com.ouie.signage.net.ApiClient
 import com.ouie.signage.net.AuthInterceptor
@@ -19,6 +22,9 @@ import com.ouie.signage.net.TokenAuthenticator
 import com.ouie.signage.pairing.PairingRepository
 import com.ouie.signage.pairing.PairingViewModel
 import com.ouie.signage.state.AppStateHolder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -32,7 +38,16 @@ val appModule = module {
     single { ClockSkewTracker() }
     single { Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false } }
 
-    // Pairing client — no auth, no skew tracking (nothing to secure or time yet).
+    // App-wide error bus. Consumers report; HeartbeatScheduler drains.
+    single { ErrorBus(capacity = 32) }
+
+    // SyncNowBroadcast connects the FCM service and the coordinator.
+    single { SyncNowBroadcast() }
+
+    // FCM token cache — lives as long as the app process.
+    single { FcmTokenSource(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) }
+
+    // Pairing client — no auth, no skew tracking.
     single(qualifier = named("pairing")) { ApiClient.baseHttpClient().build() }
     single { ApiClient.retrofit(get(qualifier = named("pairing"))).create(PairingApi::class.java) }
 
@@ -41,7 +56,6 @@ val appModule = module {
     single { ApiClient.retrofit(get(qualifier = named("device_refresh"))).create(DeviceApi::class.java) }
     single<RefreshAdapter> { RetrofitRefreshAdapter(get()) }
 
-    // Authed client — Bearer interceptor + TokenAuthenticator + Date-header capture.
     single(qualifier = named("authed")) {
         ApiClient.baseHttpClient()
             .addInterceptor(AuthInterceptor(get()))
@@ -53,8 +67,6 @@ val appModule = module {
     single { ApiClient.retrofit(get<OkHttpClient>(qualifier = named("authed"))).create(HeartbeatApi::class.java) }
     single { ApiClient.retrofit(get<OkHttpClient>(qualifier = named("authed"))).create(CacheStatusApi::class.java) }
 
-    // Downloader client — plain (no auth). R2 presigned URLs carry their own
-    // SigV4 query params; adding a Bearer header makes R2 reject with 400.
     single(qualifier = named("downloader")) { ApiClient.baseHttpClient().build() }
 
     single {
@@ -66,6 +78,9 @@ val appModule = module {
             cacheStatusApi = get(),
             skewTracker = get(),
             json = get(),
+            errorBus = get(),
+            fcmTokenSource = get(),
+            syncNow = get(),
         )
     }
 

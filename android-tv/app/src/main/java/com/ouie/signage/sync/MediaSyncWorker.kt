@@ -15,7 +15,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.time.Instant
 
 /**
  * Serial download queue. Reads the current config + the cached set, downloads
@@ -83,11 +82,14 @@ class MediaSyncWorker(
                         ext = ext,
                         checksum = media.checksum,
                         sizeBytes = media.size_bytes,
-                        cachedAtEpochSeconds = Instant.now().epochSecond,
+                        cachedAtEpochSeconds = java.time.Instant.now().epochSecond,
                         lastPlayedAtEpochSeconds = null,
                     ),
                 )
                 reporter.cached(media.id)
+            }
+            MediaDownloader.Result.InsufficientSpace -> {
+                reporter.failed(media.id, "cache full; eviction could not make room")
             }
             is MediaDownloader.Result.ChecksumMismatch -> {
                 reporter.failed(
