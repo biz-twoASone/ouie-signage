@@ -29,6 +29,7 @@ Deno.test({
         clock_skew_seconds_from_server: 2,
         cache_storage_info: { root: "internal", total_bytes: 1000, free_bytes: 500 },
         errors_since_last_heartbeat: [],
+        fcm_token: "fake-fcm-token-abc123",
       }),
     });
     assertEquals(r.status, 204);
@@ -45,10 +46,11 @@ Deno.test({
     assertNotEquals(dev?.last_seen_at, null);
 
     const { data: device } = await svc.from("devices")
-      .select("current_app_version, last_config_version_applied, clock_skew_seconds_from_server")
+      .select("current_app_version, last_config_version_applied, clock_skew_seconds_from_server, fcm_token")
       .eq("id", creds.device_id).single();
     assertEquals(device?.current_app_version, "0.1.0");
     assertEquals(device?.last_config_version_applied, "v1");
     assertEquals(device?.clock_skew_seconds_from_server, 2);
+    assertEquals(device?.fcm_token, "fake-fcm-token-abc123");
   },
 });
