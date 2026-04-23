@@ -27,6 +27,7 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       id, name, store_id, last_seen_at, fcm_token, fallback_playlist_id,
       cache_storage_info, current_app_version, current_playlist_id,
       last_config_version_applied, clock_skew_seconds_from_server,
+      last_fcm_received_at, last_sync_now_dispatched_at,
       stores(name, timezone)
     `).eq("id", id).maybeSingle(),
     supabase.from("playlists").select("id, name").order("name"),
@@ -113,6 +114,45 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
           </CardContent>
         </Card>
       </div>
+
+      {device.last_sync_now_dispatched_at && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Last Sync Now</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            {(() => {
+              const dispatched = new Date(device.last_sync_now_dispatched_at);
+              const received = device.last_fcm_received_at
+                ? new Date(device.last_fcm_received_at)
+                : null;
+              const delivered = received && received >= dispatched;
+              const secsSinceDispatch = Math.floor((Date.now() - dispatched.getTime()) / 1000);
+              if (delivered) {
+                const latencyMs = received.getTime() - dispatched.getTime();
+                const latency = (latencyMs / 1000).toFixed(1);
+                return (
+                  <span className="text-emerald-600">
+                    Delivered in {latency}s
+                  </span>
+                );
+              }
+              // Not delivered yet. Threshold 60s matches ConfigPoller.intervalMs —
+              // if push takes longer than one poll cycle, poll already covers it.
+              if (secsSinceDispatch < 60) {
+                return (
+                  <span className="text-muted-foreground">
+                    Dispatched {secsSinceDispatch}s ago, awaiting delivery
+                  </span>
+                );
+              }
+              return (
+                <span className="text-destructive">
+                  Not delivered ({secsSinceDispatch}s ago) — FCM push failed or was filtered
+                </span>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {cache && (
         <Card>
