@@ -19,6 +19,24 @@ data class HeartbeatPayload(
      * heartbeat so server-side rotations and reinstalls recover automatically.
      */
     val fcm_token: String? = null,
+    /**
+     * Timestamp of the last FCM message received by SignageMessagingService.
+     * Paired with server-side last_sync_now_dispatched_at to compute delivery
+     * latency on the dashboard. Null if no push has been received this process
+     * lifetime.
+     */
+    val last_fcm_received_at: String? = null,
+    /**
+     * UUID of the media item the device's PlaybackDirector currently has in
+     * Playing state. Null if Preparing or NoContent. Useful on dashboard to
+     * confirm "server thinks X is playing" matches what's visible on screen.
+     */
+    val current_media_id: String? = null,
+    /**
+     * One of "playing" | "preparing" | "no_content". Matches
+     * PlaybackStateSnapshot.stateTag.
+     */
+    val playback_state: String? = null,
 )
 
 @Serializable

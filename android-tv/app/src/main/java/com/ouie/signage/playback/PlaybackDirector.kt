@@ -20,6 +20,23 @@ import java.time.Clock
 import java.time.ZoneId
 
 /**
+ * Flat view of PlaybackDirector state for observability. HeartbeatScheduler reads
+ * these on each tick to populate current_media_id + playback_state in the payload.
+ * Kept separate from CurrentPlaylistSource because heartbeat cares about the
+ * narrower media-id + coarse state-tag, not the full PlaybackState sum-type.
+ */
+fun interface PlaybackStateSource {
+    fun snapshot(): PlaybackStateSnapshot
+}
+
+data class PlaybackStateSnapshot(
+    /** UUID of the currently-playing media item, or null if not in Playing state. */
+    val currentMediaId: String?,
+    /** One of "playing" | "preparing" | "no_content". */
+    val stateTag: String,
+)
+
+/**
  * Selects the active playlist at ~1 Hz and exposes a PlaybackState StateFlow.
  * The actual item-advance (video-end, image-duration-elapsed) is driven by the
  * PlaybackScreen Compose layer calling `advanceItem()`.
@@ -39,7 +56,7 @@ class PlaybackDirector(
     private val cachedMediaIds: StateFlow<Set<String>>,
     private val fileFor: (mediaId: String) -> File?,
     private val clock: Clock = Clock.systemUTC(),
-) : CurrentPlaylistSource {
+) : CurrentPlaylistSource, PlaybackStateSource {
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.NoContent)
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -48,6 +65,18 @@ class PlaybackDirector(
     private var currentIndex: Int = 0
 
     override fun current(): String? = (state.value as? PlaybackState.Playing)?.playlistId
+
+    override fun snapshot(): PlaybackStateSnapshot {
+        val s = _state.value
+        return PlaybackStateSnapshot(
+            currentMediaId = (s as? PlaybackState.Playing)?.item?.mediaId,
+            stateTag = when (s) {
+                is PlaybackState.Playing -> "playing"
+                PlaybackState.Preparing -> "preparing"
+                PlaybackState.NoContent -> "no_content"
+            },
+        )
+    }
 
     private var tickerJob: Job? = null
 

@@ -5,6 +5,7 @@ import com.ouie.signage.auth.TokenSource
 import com.ouie.signage.auth.TokenStore
 import com.ouie.signage.coordinator.RunningCoordinator
 import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.fcm.FcmReceiptTracker
 import com.ouie.signage.fcm.FcmTokenSource
 import com.ouie.signage.fcm.SyncNowBroadcast
 import com.ouie.signage.heartbeat.ClockSkewTracker
@@ -46,6 +47,7 @@ val appModule = module {
 
     // FCM token cache — lives as long as the app process.
     single { FcmTokenSource(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) }
+    single { FcmReceiptTracker() }
 
     // Pairing client — no auth, no skew tracking.
     single(qualifier = named("pairing")) { ApiClient.baseHttpClient().build() }
@@ -81,6 +83,7 @@ val appModule = module {
             errorBus = get(),
             fcmTokenSource = get(),
             syncNow = get(),
+            fcmReceiptTracker = get(),
         )
     }
 

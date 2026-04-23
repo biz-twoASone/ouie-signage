@@ -21,11 +21,14 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
     { data: playlists },
     { data: recentCache },
     { data: uptimeRules },
+    { data: recentErrors },
   ] = await Promise.all([
     supabase.from("devices").select(`
       id, name, store_id, last_seen_at, fcm_token, fallback_playlist_id,
       cache_storage_info, current_app_version, current_playlist_id,
       last_config_version_applied, clock_skew_seconds_from_server,
+      last_fcm_received_at, last_sync_now_dispatched_at,
+      current_media_id, playback_state,
       stores(name, timezone)
     `).eq("id", id).maybeSingle(),
     supabase.from("playlists").select("id, name").order("name"),
@@ -38,6 +41,11 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       .select("id, days_of_week, start_time, end_time")
       .eq("target_device_id", id)
       .order("start_time"),
+    supabase.from("device_error_events")
+      .select("occurred_at, kind, media_id, message, media(name)")
+      .eq("device_id", id)
+      .order("occurred_at", { ascending: false })
+      .limit(10),
   ]);
   if (!device) notFound();
 
@@ -108,6 +116,45 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
+      {device.last_sync_now_dispatched_at && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Last Sync Now</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            {(() => {
+              const dispatched = new Date(device.last_sync_now_dispatched_at);
+              const received = device.last_fcm_received_at
+                ? new Date(device.last_fcm_received_at)
+                : null;
+              const delivered = received && received >= dispatched;
+              const secsSinceDispatch = Math.floor((Date.now() - dispatched.getTime()) / 1000);
+              if (delivered) {
+                const latencyMs = received.getTime() - dispatched.getTime();
+                const latency = (latencyMs / 1000).toFixed(1);
+                return (
+                  <span className="text-emerald-600">
+                    Delivered in {latency}s
+                  </span>
+                );
+              }
+              // Not delivered yet. Threshold 60s matches ConfigPoller.intervalMs —
+              // if push takes longer than one poll cycle, poll already covers it.
+              if (secsSinceDispatch < 60) {
+                return (
+                  <span className="text-muted-foreground">
+                    Dispatched {secsSinceDispatch}s ago, awaiting delivery
+                  </span>
+                );
+              }
+              return (
+                <span className="text-destructive">
+                  Not delivered ({secsSinceDispatch}s ago) — FCM push failed or was filtered
+                </span>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
       {cache && (
         <Card>
           <CardHeader><CardTitle className="text-sm">Cache storage</CardTitle></CardHeader>
@@ -115,6 +162,20 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
             {cache.root ?? "?"} ({cache.filesystem ?? "?"}) —
             {" "}{Math.round((cache.free_bytes ?? 0) / 1e9)} GB free
             {" / "}{Math.round((cache.total_bytes ?? 0) / 1e9)} GB total
+          </CardContent>
+        </Card>
+      )}
+
+      {device.playback_state && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Playback state</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            <span className="font-mono">{device.playback_state}</span>
+            {device.current_media_id && (
+              <span className="text-muted-foreground">
+                {" · "}media {device.current_media_id.slice(0, 8)}…
+              </span>
+            )}
           </CardContent>
         </Card>
       )}
@@ -134,6 +195,29 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
                   {e.message && <span> · {e.message}</span>}
                 </li>
               ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Recent errors</CardTitle></CardHeader>
+        <CardContent>
+          {(!recentErrors || recentErrors.length === 0) ? (
+            <p className="text-muted-foreground text-sm">No errors recorded.</p>
+          ) : (
+            <ul className="space-y-1">
+              {recentErrors.map((e, i) => {
+                const mediaName = (e.media as unknown as { name: string } | null)?.name;
+                return (
+                  <li key={i} className="text-xs">
+                    <span className="text-muted-foreground">{e.occurred_at} </span>
+                    <span className="font-mono">{e.kind}</span>
+                    {mediaName && <span> · {mediaName}</span>}
+                    {e.message && <span> · {e.message}</span>}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
