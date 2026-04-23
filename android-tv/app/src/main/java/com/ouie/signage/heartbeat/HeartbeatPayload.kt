@@ -1,17 +1,9 @@
 // android-tv/app/src/main/java/com/ouie/signage/heartbeat/HeartbeatPayload.kt
 package com.ouie.signage.heartbeat
 
+import com.ouie.signage.errorbus.ErrorEvent
 import kotlinx.serialization.Serializable
 
-/**
- * Shape exactly matches spec §8 and `supabase/functions/devices-heartbeat/index.ts`
- * (which accepts these fields and silently ignores unknown ones). `snake_case`
- * wire format throughout.
- *
- * `errors_since_last_heartbeat` from the spec is omitted in 3b — we don't yet
- * have a local error bus worth reporting. Revisit in 3c when playback errors
- * and FCM delivery events become worth surfacing.
- */
 @Serializable
 data class HeartbeatPayload(
     val app_version: String,
@@ -20,18 +12,27 @@ data class HeartbeatPayload(
     val last_config_version_applied: String? = null,
     val clock_skew_seconds_from_server: Int? = null,
     val cache_storage_info: CacheStorageInfo? = null,
+    val errors_since_last_heartbeat: List<ErrorEvent> = emptyList(),
+    /**
+     * Latest FCM token known to the device. Null until FirebaseMessaging hands
+     * one out (first fresh install can take a second or two). Sent on every
+     * heartbeat so server-side rotations and reinstalls recover automatically.
+     */
+    val fcm_token: String? = null,
 )
 
 @Serializable
 data class CacheStorageInfo(
-    /** "internal" | "external" — matches spec §4 JSONB shape */
     val root: String,
-    /** "ext4" | "exfat" | "fat32" | "unknown" — v1 reports "unknown" */
     val filesystem: String,
     val total_bytes: Long,
     val free_bytes: Long,
-    /** ISO-8601 UTC */
     val updated_at: String,
-    /** True when we fell back to internal because no viable external was found. */
     val degraded: Boolean = false,
+    /**
+     * Preload summary (spec §4 JSONB shape). Absent in 3b's heartbeat; populated
+     * in 3c once PreloadScanner has a last result. Null when the scanner hasn't
+     * run or the preload folder isn't present.
+     */
+    val preload: com.ouie.signage.preload.PreloadStatus? = null,
 )
