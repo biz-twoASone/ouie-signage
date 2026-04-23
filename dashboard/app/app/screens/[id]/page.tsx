@@ -21,6 +21,7 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
     { data: playlists },
     { data: recentCache },
     { data: uptimeRules },
+    { data: recentErrors },
   ] = await Promise.all([
     supabase.from("devices").select(`
       id, name, store_id, last_seen_at, fcm_token, fallback_playlist_id,
@@ -38,6 +39,11 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       .select("id, days_of_week, start_time, end_time")
       .eq("target_device_id", id)
       .order("start_time"),
+    supabase.from("device_error_events")
+      .select("occurred_at, kind, media_id, message, media(name)")
+      .eq("device_id", id)
+      .order("occurred_at", { ascending: false })
+      .limit(10),
   ]);
   if (!device) notFound();
 
@@ -134,6 +140,29 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
                   {e.message && <span> · {e.message}</span>}
                 </li>
               ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Recent errors</CardTitle></CardHeader>
+        <CardContent>
+          {(!recentErrors || recentErrors.length === 0) ? (
+            <p className="text-muted-foreground text-sm">No errors recorded.</p>
+          ) : (
+            <ul className="space-y-1">
+              {recentErrors.map((e, i) => {
+                const mediaName = (e.media as unknown as { name: string } | null)?.name;
+                return (
+                  <li key={i} className="text-xs">
+                    <span className="text-muted-foreground">{e.occurred_at} </span>
+                    <span className="font-mono">{e.kind}</span>
+                    {mediaName && <span> · {mediaName}</span>}
+                    {e.message && <span> · {e.message}</span>}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
