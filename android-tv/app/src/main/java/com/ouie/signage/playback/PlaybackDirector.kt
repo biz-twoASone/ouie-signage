@@ -64,6 +64,9 @@ class PlaybackDirector(
     /** 0-based index inside the currently-playing playlist. */
     private var currentIndex: Int = 0
 
+    /** Monotonic emission counter — see PlaybackState.Playing.generation. */
+    private var generationCounter: Long = 0
+
     override fun current(): String? = (state.value as? PlaybackState.Playing)?.playlistId
 
     override fun snapshot(): PlaybackStateSnapshot {
@@ -149,7 +152,13 @@ class PlaybackDirector(
             _state.value = PlaybackState.Preparing
             return
         }
-        _state.value = PlaybackState.Playing(playlist.id, currentIndex, item)
+        val prev = _state.value as? PlaybackState.Playing
+        val sameItem = prev != null &&
+            prev.playlistId == playlist.id &&
+            prev.index == currentIndex &&
+            prev.item == item
+        val gen = if (sameItem) prev!!.generation else ++generationCounter
+        _state.value = PlaybackState.Playing(playlist.id, currentIndex, item, gen)
     }
 
     /** Called by PlaybackScreen when the current item's duration elapsed / video ended. */
@@ -159,7 +168,7 @@ class PlaybackDirector(
         val pl = cfg.playlists.firstOrNull { it.id == s.playlistId } ?: return
         currentIndex = (s.index + 1) % pl.items.size
         val next = buildItem(pl, cfg.media, currentIndex) ?: return
-        _state.value = PlaybackState.Playing(pl.id, currentIndex, next)
+        _state.value = PlaybackState.Playing(pl.id, currentIndex, next, ++generationCounter)
     }
 
     private fun buildItem(pl: PlaylistDto, media: List<MediaDto>, idx: Int): PlaybackItem? {

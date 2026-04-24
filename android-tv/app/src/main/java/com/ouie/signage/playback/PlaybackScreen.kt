@@ -27,10 +27,12 @@ fun PlaybackScreen(
             when (cur.item.kind) {
                 PlaybackItem.Kind.Video -> VideoPlayerHost(
                     file = cur.item.localFile,
+                    generation = cur.generation,
                     onEnded = onAdvanceItem,
                 )
                 PlaybackItem.Kind.Image -> ImageSlideHost(
                     file = cur.item.localFile,
+                    generation = cur.generation,
                     durationSeconds = cur.item.durationSeconds,
                     onTimeout = onAdvanceItem,
                 )

@@ -28,7 +28,7 @@ import java.io.File
  * video; looping happens at the playlist level via PlaybackDirector.advanceItem).
  */
 @Composable
-fun VideoPlayerHost(file: File, onEnded: () -> Unit) {
+fun VideoPlayerHost(file: File, generation: Long, onEnded: () -> Unit) {
     val context = LocalContext.current
     val endedCallback by rememberUpdatedState(onEnded)
 
@@ -39,8 +39,9 @@ fun VideoPlayerHost(file: File, onEnded: () -> Unit) {
         }
     }
 
-    LaunchedEffect(file) {
+    LaunchedEffect(file, generation) {
         player.setMediaItem(MediaItem.fromUri(file.toURI().toString()))
+        player.seekTo(0)
         player.prepare()
     }
 

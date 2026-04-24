@@ -18,5 +18,12 @@ sealed interface PlaybackState {
         val playlistId: String,
         val index: Int,
         val item: PlaybackItem,
+        /**
+         * Monotonic counter incremented by PlaybackDirector.advanceItem() so
+         * StateFlow emissions are not deduped by equals() when a single-item
+         * playlist loops. Preserved by tick() when the resolved item is
+         * unchanged so 1Hz ticks don't cause ExoPlayer restarts.
+         */
+        val generation: Long,
     ) : PlaybackState
 }

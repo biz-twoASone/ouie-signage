@@ -28,11 +28,11 @@ import java.io.File
  * bitmap on disk already, and pulling in Coil just for this is overkill.
  */
 @Composable
-fun ImageSlideHost(file: File, durationSeconds: Double, onTimeout: () -> Unit) {
+fun ImageSlideHost(file: File, generation: Long, durationSeconds: Double, onTimeout: () -> Unit) {
     val bitmap = remember(file) { BitmapFactory.decodeFile(file.absolutePath) }
     val timeoutCallback by rememberUpdatedState(onTimeout)
 
-    LaunchedEffect(file, durationSeconds) {
+    LaunchedEffect(file, generation, durationSeconds) {
         // durationSeconds can be 0 if the config is malformed; guard against that
         // so we don't end up advancing in a tight loop.
         val ms = (durationSeconds.coerceAtLeast(1.0) * 1000).toLong()
