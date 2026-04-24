@@ -3,8 +3,6 @@ package com.ouie.signage
 
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
-import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,29 +36,6 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         tokenStore.loadSync()?.let { appState.toRunning(it.deviceId) }
         setContent { SignageRoot(appState) }
-    }
-
-    /**
-     * Operator escape hatch. With MainActivity now registered as the device HOME
-     * app (Plan 4.1), the regular launcher is hidden — operators cannot navigate
-     * to Settings/Play Store/Wi-Fi via remote. 5-second hold on OK (DPAD_CENTER)
-     * opens the system Settings app. 5s is long enough that no customer could
-     * trigger it accidentally while fiddling with the remote.
-     */
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            event.repeatCount > 0 &&
-            event.eventTime - event.downTime >= 5_000L
-        ) {
-            runCatching {
-                startActivity(
-                    Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
-            return true
-        }
-        return super.dispatchKeyEvent(event)
     }
 }
 
