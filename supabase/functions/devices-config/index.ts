@@ -25,6 +25,12 @@ Deno.serve(async (req) => {
   if (devErr || !dev) return new Response("device gone", { status: 401 });
   if (dev.revoked_at) return new Response("revoked", { status: 401 });
 
+  // Plan 5 Task 4: fetch APK pointer for this device's tenant. Null when no
+  // APK has been published — device-side UpdateChecker no-ops on missing block.
+  const { data: tenantRow } = await svc.from("tenants").select(
+    "latest_apk_version_code, latest_apk_version_name, latest_apk_r2_path, latest_apk_sha256, latest_apk_released_at",
+  ).eq("id", dev.tenant_id).maybeSingle();
+
   // Collect groups this device belongs to:
   const { data: groups } = await svc.from("device_group_members")
     .select("device_group_id").eq("device_id", dev.id);
@@ -97,6 +103,19 @@ Deno.serve(async (req) => {
         })),
     })),
     media: mediaWithUrls,
+    app_release: tenantRow?.latest_apk_version_code != null && tenantRow.latest_apk_r2_path
+      ? {
+        version_code: tenantRow.latest_apk_version_code,
+        version_name: tenantRow.latest_apk_version_name,
+        sha256: tenantRow.latest_apk_sha256,
+        released_at: tenantRow.latest_apk_released_at,
+        url: await presignR2GetUrl({
+          ...r2cfg,
+          key: tenantRow.latest_apk_r2_path,
+          ttlSeconds: 86400,
+        }),
+      }
+      : null,
   };
 
   // Version hash excludes URL (which rotates with expiry) — based on content identity:
@@ -110,6 +129,14 @@ Deno.serve(async (req) => {
       checksum: m.checksum,
       size_bytes: m.size_bytes,
     })),
+    // Plan 5 Task 4: include app_release in the version hash (excluding `url`
+    // since presigned URLs rotate). version_code + sha256 capture the identity.
+    app_release: tenantRow?.latest_apk_version_code != null
+      ? {
+        version_code: tenantRow.latest_apk_version_code,
+        sha256: tenantRow.latest_apk_sha256,
+      }
+      : null,
   });
   const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stable));
   const version = "sha256:" +
