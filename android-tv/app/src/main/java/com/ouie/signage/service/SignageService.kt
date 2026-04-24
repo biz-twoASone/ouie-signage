@@ -39,6 +39,18 @@ class SignageService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         coordinator.start()
+        // Best-effort bring MainActivity to foreground. When invoked from
+        // BootReceiver, we're inside the FGS tempAllowList window (20s,
+        // reason=BOOT_COMPLETED) and BAL allows an activity start. Outside
+        // that window (normal app open, service restart) BAL throws and we
+        // silently fall through — FSI on the notification is the fallback.
+        try {
+            val launch = Intent(this, com.ouie.signage.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            startActivity(launch)
+        } catch (_: Throwable) {
+            // BAL_BLOCK is expected outside the tempAllowList window.
+        }
         return START_STICKY
     }
 
