@@ -13,6 +13,7 @@ import {
   Users,
   Clock,
   BellRing,
+  Download,
   Settings,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/app/screen-groups", label: copy.screenGroups, icon: Users },
   { href: "/app/schedules", label: "Scheduling", icon: Clock },
   { href: "/app/alerts", label: "Alerts", icon: BellRing },
+  { href: "/app/app-releases", label: "App Releases", icon: Download },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
