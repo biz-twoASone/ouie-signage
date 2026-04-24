@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.ouie.signage.auth.TokenSource
 import com.ouie.signage.coordinator.RunningCoordinator
 import com.ouie.signage.error.ErrorScreen
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private val tokenStore: TokenSource by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         tokenStore.loadSync()?.let { appState.toRunning(it.deviceId) }
