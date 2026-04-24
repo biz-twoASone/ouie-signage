@@ -15,8 +15,8 @@ android {
         applicationId = "com.ouie.signage"
         minSdk = 26              // Android TV 8.0 floor; current F&B TVs are newer
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.1-p4"
+        versionCode = 8
+        versionName = "0.5.0-p5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
