@@ -39,11 +39,14 @@ internal object StubConfigApi : ConfigApi {
     }
 }
 
-internal val StubConfigRepository: ConfigRepository =
-    ConfigRepository(
-        api = StubConfigApi,
-        store = ConfigStore(
-            File(System.getProperty("java.io.tmpdir"), "stub-config-${System.nanoTime()}"),
-            Json,
-        ),
-    )
+/**
+ * Plan 5 Task 21 — per-call factory. Each call builds a ConfigRepository backed
+ * by a fresh tmpdir, registered for shutdown-hook cleanup. Factory (not a shared
+ * `val`) because ConfigRepository holds mutable StateFlow and we want every test
+ * to start from a clean slate — no cross-test contamination.
+ */
+internal fun newStubConfigRepository(): ConfigRepository {
+    val dir = File(System.getProperty("java.io.tmpdir"), "stub-config-${System.nanoTime()}")
+    Runtime.getRuntime().addShutdownHook(Thread { dir.deleteRecursively() })
+    return ConfigRepository(api = StubConfigApi, store = ConfigStore(dir, Json))
+}

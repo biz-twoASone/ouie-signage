@@ -26,7 +26,7 @@ class HeartbeatSchedulerFirstBootTest {
         HeartbeatScheduler(
             scope = CoroutineScope(Dispatchers.Unconfined),
             api = StubHeartbeatApi,
-            configRepo = StubConfigRepository,
+            configRepo = newStubConfigRepository(),
             skewTracker = ClockSkewTracker(),
             playlistSource = { null },
             pickProvider = { null },
@@ -36,6 +36,7 @@ class HeartbeatSchedulerFirstBootTest {
             fcmReceiptTracker = FcmReceiptTracker(),
             playbackStateSource = StubPlaybackStateSource,
             intervalMs = 60_000,
+            nowMs = { 0L },
         )
 
     @Test fun `maybeForceFcmRefresh calls forceRefresh on first invocation only`() = runBlocking {

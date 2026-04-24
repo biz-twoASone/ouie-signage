@@ -34,11 +34,13 @@ class HeartbeatScheduler(
     private val fcmReceiptTracker: FcmReceiptTracker,
     private val playbackStateSource: PlaybackStateSource,
     private val intervalMs: Long = 60_000,
+    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
 ) {
 
     private var job: Job? = null
+    // Single-writer: only touched from the sendOne() coroutine. No @Volatile needed.
     private var firstAfterBoot: Boolean = true
-    private val processStartRealtime = SystemClock.elapsedRealtime()
+    private val processStartRealtime = nowMs()
 
     fun start() {
         if (job?.isActive == true) return
@@ -79,7 +81,7 @@ class HeartbeatScheduler(
 
     private suspend fun sendOne() {
         maybeForceFcmRefresh()
-        val uptimeSeconds = (SystemClock.elapsedRealtime() - processStartRealtime) / 1000
+        val uptimeSeconds = (nowMs() - processStartRealtime) / 1000
         val pick = pickProvider()
         val cacheInfo = pick?.let {
             CacheStorageInfoBuilder.buildFrom(it, preloadStatusSource.current())
