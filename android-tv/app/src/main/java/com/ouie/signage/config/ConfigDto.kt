@@ -10,6 +10,7 @@ data class ConfigDto(
     val rules: List<RuleDto> = emptyList(),
     val playlists: List<PlaylistDto> = emptyList(),
     val media: List<MediaDto> = emptyList(),
+    val app_release: AppReleaseDto? = null,
 )
 
 @Serializable
@@ -55,4 +56,13 @@ data class MediaDto(
     val checksum: String,             // lowercase hex sha256
     val video_duration_seconds: Double? = null,
     val url: String,                  // signed R2 GET URL, 24h TTL
+)
+
+@Serializable
+data class AppReleaseDto(
+    val version_code: Int,
+    val version_name: String,
+    val sha256: String,
+    val released_at: String? = null,
+    val url: String,
 )
