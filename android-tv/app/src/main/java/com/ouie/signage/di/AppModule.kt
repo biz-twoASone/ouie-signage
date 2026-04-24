@@ -5,6 +5,8 @@ import com.ouie.signage.auth.TokenSource
 import com.ouie.signage.auth.TokenStore
 import com.ouie.signage.coordinator.RunningCoordinator
 import com.ouie.signage.errorbus.ErrorBus
+import com.ouie.signage.update.ApkInstaller
+import com.ouie.signage.update.PackageInstallerHelper
 import com.ouie.signage.fcm.FcmReceiptTracker
 import com.ouie.signage.fcm.FcmTokenSource
 import com.ouie.signage.fcm.SyncNowBroadcast
@@ -71,6 +73,9 @@ val appModule = module {
 
     single(qualifier = named("downloader")) { ApiClient.baseHttpClient().build() }
 
+    // Plan 5 Task 10 — OTA install path.
+    single<ApkInstaller> { PackageInstallerHelper(androidContext(), get()) }
+
     single {
         RunningCoordinator(
             context = androidContext(),
@@ -84,6 +89,7 @@ val appModule = module {
             fcmTokenSource = get(),
             syncNow = get(),
             fcmReceiptTracker = get(),
+            apkInstaller = get(),
         )
     }
 

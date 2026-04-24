@@ -26,6 +26,8 @@ import com.ouie.signage.preload.PreloadScanner
 import com.ouie.signage.sync.CacheStatusReporter
 import com.ouie.signage.sync.MediaDownloader
 import com.ouie.signage.sync.MediaSyncWorker
+import com.ouie.signage.update.ApkInstaller
+import com.ouie.signage.update.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +54,7 @@ class RunningCoordinator(
     private val fcmTokenSource: FcmTokenSource,
     private val syncNow: SyncNowBroadcast,
     private val fcmReceiptTracker: FcmReceiptTracker,
+    private val apkInstaller: ApkInstaller,
 ) {
 
     private var scope: CoroutineScope? = null
@@ -122,6 +125,34 @@ class RunningCoordinator(
         )
         sync = syncer
         syncer.start()
+
+        // Plan 5 Task 10: OTA — react to app_release on every config refresh.
+        // updatesDir lives next to the media cache so OS-level "clear cache"
+        // wipes both. UpdateChecker no-ops when version_code <= our own.
+        val updatesDir = File(pick.root, "updates")
+        val updater = UpdateChecker(
+            httpClient = downloaderHttpClient,
+            updatesDir = updatesDir,
+            currentVersionCode = com.ouie.signage.BuildConfig.VERSION_CODE,
+            installer = apkInstaller,
+        )
+        configRepo.current.onEach { cfg ->
+            val release = cfg?.app_release ?: return@onEach
+            try {
+                updater.checkAndDownload(
+                    UpdateChecker.Release(
+                        version_code = release.version_code,
+                        version_name = release.version_name,
+                        sha256 = release.sha256,
+                        url = release.url,
+                    ),
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                errorBus.report("ota_check_failed", null, t.message)
+            }
+        }.launchIn(newScope)
 
         // Preload scanner — runs at start + on each config change.
         val preloadDir = File(pick.root.parentFile ?: pick.root, "preload")
