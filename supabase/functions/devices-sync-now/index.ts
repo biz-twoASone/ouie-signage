@@ -74,12 +74,55 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Fire-and-forget. We don't want to block the dashboard on FCM latency, but
-  // we do want a breadcrumb when sends fail so silent delivery problems are
-  // visible in edge-function logs.
+  // Plan 5 Task 18: capture FCM dispatch outcome per-token and stamp the
+  // result onto the originating device row(s). Server timestamp is captured
+  // before send (already in `dispatchedAt`). Single-device path stamps that
+  // device; group path zips results back to member device IDs.
   const results = await Promise.allSettled(targetTokens.map((t) => sendFcmSync(t)));
-  for (const r of results) {
-    if (r.status === "rejected") console.error("sendFcmSync rejected:", r.reason);
+  if (deviceId) {
+    const r = results[0];
+    const update: Record<string, string | null> = {
+      last_fcm_dispatched_at: dispatchedAt,
+      last_fcm_dispatch_message_id: null,
+      last_fcm_dispatch_error: null,
+    };
+    if (r?.status === "fulfilled" && r.value.ok) {
+      update.last_fcm_dispatch_message_id = r.value.messageId;
+    } else {
+      update.last_fcm_dispatch_error = r?.status === "fulfilled"
+        ? (r.value as { error: string }).error
+        : `rejected: ${String((r as PromiseRejectedResult)?.reason ?? "unknown")}`;
+    }
+    await svc.from("devices").update(update).eq("id", deviceId);
+  } else if (groupId) {
+    // Group send: zip token results back to device IDs in the order we built them.
+    const memberIds = await userClient.from("device_group_members")
+      .select("device_id, devices!inner(fcm_token)")
+      .eq("device_group_id", groupId);
+    const ordered = (memberIds.data ?? [])
+      .map((row) =>
+        ({
+          deviceId: (row as { device_id: string }).device_id,
+          token: (row as { devices?: { fcm_token?: string | null } }).devices?.fcm_token ?? null,
+        })
+      )
+      .filter((m) => typeof m.token === "string" && m.token.length > 0);
+    for (let i = 0; i < ordered.length; i++) {
+      const r = results[i];
+      const update: Record<string, string | null> = {
+        last_fcm_dispatched_at: dispatchedAt,
+        last_fcm_dispatch_message_id: null,
+        last_fcm_dispatch_error: null,
+      };
+      if (r?.status === "fulfilled" && r.value.ok) {
+        update.last_fcm_dispatch_message_id = r.value.messageId;
+      } else {
+        update.last_fcm_dispatch_error = r?.status === "fulfilled"
+          ? (r.value as { error: string }).error
+          : `rejected: ${String((r as PromiseRejectedResult)?.reason ?? "unknown")}`;
+      }
+      await svc.from("devices").update(update).eq("id", ordered[i].deviceId);
+    }
   }
   return new Response(null, { status: 202 });
 });

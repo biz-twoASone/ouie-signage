@@ -12,6 +12,10 @@ type ServiceAccount = {
   token_uri: string;
 };
 
+export type FcmDispatchResult =
+  | { ok: true; messageId: string }
+  | { ok: false; error: string };
+
 async function importPrivateKey(pem: string): Promise<CryptoKey> {
   const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, "");
   const der = Uint8Array.from(atob(clean), (c) => c.charCodeAt(0));
@@ -51,7 +55,7 @@ async function getAccessToken(): Promise<string> {
   return j.access_token as string;
 }
 
-export async function sendFcmSync(fcmToken: string): Promise<void> {
+export async function sendFcmSync(fcmToken: string): Promise<FcmDispatchResult> {
   const projectId = Deno.env.get("FCM_PROJECT_ID");
   if (!projectId) throw new Error("FCM_PROJECT_ID must be set");
   const at = await getAccessToken();
@@ -71,6 +75,9 @@ export async function sendFcmSync(fcmToken: string): Promise<void> {
   });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`fcm send failed: ${res.status} ${txt}`);
+    return { ok: false, error: `${res.status} ${txt.slice(0, 500)}` };
   }
+  const body = await res.json().catch(() => ({}));
+  const messageId = typeof body.name === "string" ? body.name : "";
+  return { ok: true, messageId };
 }
