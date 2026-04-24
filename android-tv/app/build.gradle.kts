@@ -55,6 +55,12 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true   // allow Android APIs (e.g. SystemClock) in JVM unit tests
+        }
+    }
+
     packaging {
         resources {
             excludes += setOf(
