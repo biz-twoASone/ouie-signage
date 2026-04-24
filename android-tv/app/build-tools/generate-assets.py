@@ -51,25 +51,41 @@ FOREGROUND_DENSITIES = {
 }
 
 
-def recolor_alpha_to_white(img: Image.Image) -> Image.Image:
-    """Replace every visible (non-transparent) pixel with white, preserving alpha.
-    Used to convert the green source wordmark into a white wordmark for placement
-    on a brand-green banner background."""
+def wordmark_to_white_on_transparent(img: Image.Image) -> Image.Image:
+    """Convert a green-wordmark-on-white source into a white-wordmark-on-transparent.
+    The source PNG's alpha channel is unreliable (fully opaque despite a visibly
+    transparent background in viewers), so we key by luma: bright pixels become
+    transparent, dark pixels become white with proportional alpha. Preserves
+    anti-aliasing at letter edges."""
     img = img.convert("RGBA")
-    pixels = img.load()
+    out = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    px_in = img.load()
+    px_out = out.load()
+    # Bimodal threshold: pixels brighter than `bg_cutoff` are background (alpha=0);
+    # pixels darker than `fg_cutoff` are wordmark body (alpha=255); pixels in the
+    # 150..235 anti-aliased ramp get a linear alpha so letter edges stay smooth.
+    bg_cutoff = 235
+    fg_cutoff = 150
+    span = bg_cutoff - fg_cutoff
     for y in range(img.height):
         for x in range(img.width):
-            r, g, b, a = pixels[x, y]
-            if a > 0:
-                pixels[x, y] = (255, 255, 255, a)
-    return img
+            r, g, b, _ = px_in[x, y]
+            luma = 0.299 * r + 0.587 * g + 0.114 * b
+            if luma >= bg_cutoff:
+                alpha = 0
+            elif luma <= fg_cutoff:
+                alpha = 255
+            else:
+                alpha = int(255 * (bg_cutoff - luma) / span)
+            px_out[x, y] = (255, 255, 255, alpha)
+    return out
 
 
 def make_banner(out: Path, target_w: int, target_h: int) -> None:
     """Banner = brand-green canvas with white wordmark centered, ~80% width."""
     bg = Image.new("RGBA", (target_w, target_h), BRAND_GREEN)
     src = Image.open(WORDMARK_SRC).convert("RGBA")
-    src = recolor_alpha_to_white(src)
+    src = wordmark_to_white_on_transparent(src)
     margin_w = int(target_w * 0.10)
     inner_w = target_w - 2 * margin_w
     aspect = src.width / src.height
