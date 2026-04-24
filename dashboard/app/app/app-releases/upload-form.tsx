@@ -31,7 +31,8 @@ export function UploadForm({ currentVersionCode }: { currentVersionCode: number 
     if (currentVersionCode != null && vc <= currentVersionCode) {
       return setError(`versionCode must exceed current (${currentVersionCode})`);
     }
-    if (!versionName) return setError("versionName required");
+    const versionNameTrimmed = versionName.trim();
+    if (!versionNameTrimmed) return setError("versionName required");
 
     try {
       setProgress("Computing checksum…");
@@ -55,7 +56,7 @@ export function UploadForm({ currentVersionCode }: { currentVersionCode: number 
       setProgress("Publishing pointer…");
       const publishResp = await publishApkRelease({
         versionCode: vc,
-        versionName,
+        versionName: versionNameTrimmed,
         r2Path: uploadResp.r2_path,
         sha256,
       });

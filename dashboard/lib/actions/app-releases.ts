@@ -6,6 +6,7 @@
 // Mirrors the two-phase pattern in `dashboard/lib/actions/media.ts`.
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 export type ReleaseRow = {
@@ -88,5 +89,6 @@ export async function publishApkRelease(input: {
     const t = await res.text();
     return { error: `apk-publish: ${res.status} ${t}` };
   }
+  revalidatePath("/app/app-releases");
   return { ok: true };
 }
