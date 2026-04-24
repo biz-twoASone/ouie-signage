@@ -5,8 +5,15 @@
 // PackageInstaller. On sha256 mismatch the partial file is deleted so the
 // next attempt re-downloads cleanly. On already-cached match, skips the HTTP
 // fetch entirely.
+//
+// HTTP TIMEOUT CONTRACT: callers MUST inject an OkHttpClient with a non-zero
+// callTimeout or readTimeout. The default OkHttpClient has no timeouts (0ms =
+// indefinite) — if R2 stalls mid-stream on a flaky F&B WiFi, this coroutine
+// hangs until external cancellation. Task 10 wires the existing
+// `named("downloader")` client which already has appropriate timeouts.
 package com.ouie.signage.update
 
+import com.ouie.signage.cache.Checksum
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +21,6 @@ import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.security.MessageDigest
 
 interface ApkInstaller {
     suspend fun install(versionCode: Int, apk: File)
@@ -51,7 +57,7 @@ class UpdateChecker(
         // Reuse a previously-completed download if its bytes match the expected
         // sha256. Speeds repeated install attempts (e.g. user dismissed the
         // system dialog and we retry on the next config poll).
-        if (target.exists() && sha256Hex(target) == release.sha256) {
+        if (target.exists() && Checksum.sha256OfFile(target) == release.sha256) {
             installer.install(release.version_code, target)
             return@withContext Outcome.Installing
         }
@@ -70,25 +76,12 @@ class UpdateChecker(
             return@withContext Outcome.DownloadFailed
         }
 
-        if (sha256Hex(target) != release.sha256) {
+        if (Checksum.sha256OfFile(target) != release.sha256) {
             target.delete()
             return@withContext Outcome.ChecksumMismatch
         }
 
         installer.install(release.version_code, target)
         Outcome.Installing
-    }
-
-    private fun sha256Hex(file: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                md.update(buf, 0, n)
-            }
-        }
-        return md.digest().joinToString("") { "%02x".format(it) }
     }
 }
