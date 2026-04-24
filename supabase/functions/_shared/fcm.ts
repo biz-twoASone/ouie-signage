@@ -74,6 +74,10 @@ export async function sendFcmSync(fcmToken: string): Promise<FcmDispatchResult> 
     }),
   });
   if (!res.ok) {
+    // 500-char cap: FCM HTTP v1 error bodies are structured JSON (error.status +
+    // error.message + optional error.details[]); typical size <400B. 500 preserves
+    // the actionable prefix while bounding the `devices.last_fcm_dispatch_error`
+    // text column. See https://firebase.google.com/docs/reference/fcm/rest/v1/ErrorCode
     const txt = await res.text();
     return { ok: false, error: `${res.status} ${txt.slice(0, 500)}` };
   }
