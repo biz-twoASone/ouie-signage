@@ -3,4 +3,15 @@
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:statusBarColor" tools:targetApi="21">@android:color/black</item>
     </style>
+
+    <!-- Plan 5 Phase 2 Task 13. Splash theme — applied at app launch, hands
+         off to Theme.SignageTv after MainActivity.onCreate runs. Brand-green
+         window background + foreground icon centered (uses the same adaptive
+         icon foreground as the app icon, so the splash visually anchors to
+         the launcher icon). -->
+    <style name="Theme.SignageTv.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand_green</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.SignageTv</item>
+    </style>
 </resources>

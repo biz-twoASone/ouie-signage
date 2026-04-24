@@ -18,6 +18,7 @@ kotlinxSerialization = "1.7.3"
 retrofitKotlinxSerialization = "1.0.0"
 koin = "4.0.0"
 securityCrypto = "1.1.0-alpha06"
+splashscreen = "1.0.1"
 junit = "4.13.2"
 mockwebserver = "4.12.0"
 kotlinxCoroutinesTest = "1.9.0"
@@ -25,6 +26,7 @@ turbine = "1.2.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }

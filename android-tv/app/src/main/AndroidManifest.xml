@@ -42,7 +42,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.SignageTv">
+            android:theme="@style/Theme.SignageTv.Splash">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
