@@ -28,6 +28,7 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
       cache_storage_info, current_app_version, current_playlist_id,
       last_config_version_applied, clock_skew_seconds_from_server,
       last_fcm_received_at, last_sync_now_dispatched_at,
+      last_fcm_dispatched_at, last_fcm_dispatch_message_id, last_fcm_dispatch_error,
       current_media_id, playback_state,
       stores(name, timezone)
     `).eq("id", id).maybeSingle(),
@@ -151,6 +152,15 @@ export default async function ScreenDetailPage({ params }: { params: Promise<{ i
                 </span>
               );
             })()}
+            {device.last_fcm_dispatch_error ? (
+              <div className="mt-1">
+                <span className="text-destructive text-xs">FCM error: {device.last_fcm_dispatch_error}</span>
+              </div>
+            ) : device.last_fcm_dispatch_message_id ? (
+              <div className="text-muted-foreground text-xs mt-1">
+                FCM msg <code className="font-mono">{device.last_fcm_dispatch_message_id.slice(-16)}</code>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
