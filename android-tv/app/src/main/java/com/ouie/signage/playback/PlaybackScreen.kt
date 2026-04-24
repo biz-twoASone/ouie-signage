@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.ouie.signage.running.InitialSyncOverlay
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -21,7 +22,7 @@ fun PlaybackScreen(
 ) {
     val s by state.collectAsState()
     when (val cur = s) {
-        PlaybackState.NoContent -> NoContentScreen()
+        PlaybackState.NoContent -> InitialSyncOverlay(message = "Syncing menu…")
         PlaybackState.Preparing -> PreparingScreen()
         is PlaybackState.Playing -> {
             when (cur.item.kind) {
