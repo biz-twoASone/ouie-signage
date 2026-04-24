@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plan 5 Task 12. Adaptive icon background layer. Solid brand-green —
+     the foreground (white wordmark on transparent) sits on top. The launcher
+     mask shapes both layers identically. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/brand_green" />
+</shape>
