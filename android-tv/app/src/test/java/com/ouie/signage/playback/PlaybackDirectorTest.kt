@@ -91,4 +91,38 @@ class PlaybackDirectorTest {
         // Loop back to 0
         assertEquals(0, (d.state.first() as PlaybackState.Playing).index)
     }
+
+    @Test
+    fun `advanceItem on single-item playlist emits new generation`() = runTest {
+        val d = director(cfg = cfg("m1"), cached = setOf("m1"))
+        d.tick()   // enter Playing at index 0
+        val first = d.state.first() as PlaybackState.Playing
+        assertEquals("m1", first.item.mediaId)
+        assertEquals(0, first.index)
+
+        d.advanceItem()
+        val second = d.state.first() as PlaybackState.Playing
+        // Wrapping back to index 0 is correct for 1-item playlists.
+        assertEquals(0, second.index)
+        assertEquals("m1", second.item.mediaId)
+        // Generation MUST differ so downstream collectors (Compose) receive a
+        // fresh emission and can re-prepare the player.
+        assert(second.generation > first.generation) {
+            "expected generation to increment; first=${first.generation} second=${second.generation}"
+        }
+    }
+
+    @Test
+    fun `tick preserves generation when item is unchanged`() = runTest {
+        val d = director(cfg = cfg("m1", "m2"), cached = setOf("m1", "m2"))
+        d.tick()
+        val first = d.state.first() as PlaybackState.Playing
+        d.tick()   // same playlist, same index, same item
+        val second = d.state.first() as PlaybackState.Playing
+        assertEquals(
+            "tick() must not churn generation for unchanged item — would cause 1Hz ExoPlayer restarts",
+            first.generation,
+            second.generation,
+        )
+    }
 }
